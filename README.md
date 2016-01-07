@@ -3,7 +3,7 @@ linux-4.1.x-zenx
 
 Versione del geek kernel con le patch scelte da me
 
-bfs bfq additional_cpu_optimizations fixes zen uksm
+bfs bfq additional_cpu_optimizations uksm zen
 
 Se vuoi scaricare questo repo e rimanere aggiornato con tutte le modifiche digita su terminale:
 
