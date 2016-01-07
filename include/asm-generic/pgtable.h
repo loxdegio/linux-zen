@@ -539,12 +539,12 @@ extern void untrack_pfn(struct vm_area_struct *vma, unsigned long pfn,
 static inline int is_uksm_zero_pfn(unsigned long pfn)
 {
 	extern unsigned long uksm_zero_pfn;
-        return pfn == uksm_zero_pfn;
+	return pfn == uksm_zero_pfn;
 }
 #else
 static inline int is_uksm_zero_pfn(unsigned long pfn)
 {
-        return 0;
+	return 0;
 }
 #endif
 
