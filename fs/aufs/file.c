@@ -1,18 +1,5 @@
 /*
  * Copyright (C) 2005-2015 Junjiro R. Okajima
- *
- * This program, aufs is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -795,9 +782,11 @@ static void aufs_invalidatepage(struct page *page, unsigned int offset,
 { AuUnsupport(); }
 static int aufs_releasepage(struct page *page, gfp_t gfp)
 { AuUnsupport(); return 0; }
+#if 0 /* called by memory compaction regardless file */
 static int aufs_migratepage(struct address_space *mapping, struct page *newpage,
 			    struct page *page, enum migrate_mode mode)
 { AuUnsupport(); return 0; }
+#endif
 static int aufs_launder_page(struct page *page)
 { AuUnsupport(); return 0; }
 static int aufs_is_partially_uptodate(struct page *page,
@@ -830,7 +819,8 @@ const struct address_space_operations aufs_aop = {
 	/* no bmap, no block device */
 	.invalidatepage		= aufs_invalidatepage,
 	.releasepage		= aufs_releasepage,
-	.migratepage		= aufs_migratepage,
+	/* is fallback_migrate_page ok? */
+	/* .migratepage		= aufs_migratepage, */
 	.launder_page		= aufs_launder_page,
 	.is_partially_uptodate	= aufs_is_partially_uptodate,
 	.is_dirty_writeback	= aufs_is_dirty_writeback,

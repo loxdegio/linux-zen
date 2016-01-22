@@ -1,18 +1,5 @@
 /*
  * Copyright (C) 2005-2015 Junjiro R. Okajima
- *
- * This program, aufs is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -894,15 +881,12 @@ struct au_whtmp_rmdir *au_whtmp_rmdir_alloc(struct super_block *sb, gfp_t gfp)
 
 	SiMustAnyLock(sb);
 
-	whtmp = kmalloc(sizeof(*whtmp), gfp);
+	whtmp = kzalloc(sizeof(*whtmp), gfp);
 	if (unlikely(!whtmp)) {
 		whtmp = ERR_PTR(-ENOMEM);
 		goto out;
 	}
 
-	whtmp->dir = NULL;
-	whtmp->br = NULL;
-	whtmp->wh_dentry = NULL;
 	/* no estimation for dir size */
 	rdhash = au_sbi(sb)->si_rdhash;
 	if (!rdhash)

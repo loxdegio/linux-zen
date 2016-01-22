@@ -1,18 +1,5 @@
 /*
  * Copyright (C) 2005-2015 Junjiro R. Okajima
- *
- * This program, aufs is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -90,7 +77,7 @@ struct au_ren_args {
 /*
  * functions for reverting.
  * when an error happened in a single rename systemcall, we should revert
- * everything as if nothing happend.
+ * everything as if nothing happened.
  * we don't need to revert the copied-up/down the parent dir since they are
  * harmless.
  */
@@ -842,11 +829,9 @@ int aufs_rename(struct inode *_src_dir, struct dentry *_src_dentry,
 		if (unlikely(d_really_is_positive(a->dst_dentry)
 			     && !d_is_dir(a->dst_dentry)))
 			goto out_free;
-		err = aufs_read_and_write_lock2(a->dst_dentry, a->src_dentry,
-						AuLock_DIR | flags);
-	} else
-		err = aufs_read_and_write_lock2(a->dst_dentry, a->src_dentry,
-						flags);
+		flags |= AuLock_DIRS;
+	}
+	err = aufs_read_and_write_lock2(a->dst_dentry, a->src_dentry, flags);
 	if (unlikely(err))
 		goto out_free;
 
@@ -872,7 +857,7 @@ int aufs_rename(struct inode *_src_dir, struct dentry *_src_dentry,
 
 	/*
 	 * is it possible?
-	 * yes, it happend (in linux-3.3-rcN) but I don't know why.
+	 * yes, it happened (in linux-3.3-rcN) but I don't know why.
 	 * there may exist a problem somewhere else.
 	 */
 	err = -EINVAL;

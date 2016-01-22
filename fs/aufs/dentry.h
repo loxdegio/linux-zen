@@ -1,18 +1,5 @@
 /*
  * Copyright (C) 2005-2015 Junjiro R. Okajima
- *
- * This program, aufs is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -44,7 +31,7 @@ struct au_dinfo {
 /* ---------------------------------------------------------------------- */
 
 /* dentry.c */
-extern const struct dentry_operations aufs_dop;
+extern const struct dentry_operations aufs_dop, aufs_dop_noreval;
 struct au_branch;
 struct dentry *au_sio_lkup_one(struct qstr *name, struct dentry *parent);
 int au_h_verify(struct dentry *h_dentry, unsigned int udba, struct inode *h_dir,
@@ -54,6 +41,7 @@ int au_lkup_dentry(struct dentry *dentry, aufs_bindex_t bstart, mode_t type);
 int au_lkup_neg(struct dentry *dentry, aufs_bindex_t bindex, int wh);
 int au_refresh_dentry(struct dentry *dentry, struct dentry *parent);
 int au_reval_dpath(struct dentry *dentry, unsigned int sigen);
+void au_refresh_dop(struct dentry *dentry, int force_reval);
 
 /* dinfo.c */
 void au_di_init_once(void *_di);

@@ -1,18 +1,5 @@
 /*
  * Copyright (C) 2005-2015 Junjiro R. Okajima
- *
- * This program, aufs is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -100,6 +87,32 @@ out:
 	return err;
 }
 
+void au_refresh_iop(struct inode *inode, int force_getattr)
+{
+	int type;
+	struct au_sbinfo *sbi = au_sbi(inode->i_sb);
+	const struct inode_operations *iop
+		= force_getattr ? aufs_iop : sbi->si_iop_array;
+
+	if (inode->i_op == iop)
+		return;
+
+	switch (inode->i_mode & S_IFMT) {
+	case S_IFDIR:
+		type = AuIop_DIR;
+		break;
+	case S_IFLNK:
+		type = AuIop_SYMLINK;
+		break;
+	default:
+		type = AuIop_OTHER;
+		break;
+	}
+
+	inode->i_op = iop + type;
+	/* unnecessary smp_wmb() */
+}
+
 int au_refresh_hinode_self(struct inode *inode)
 {
 	int err, update;
@@ -181,11 +194,13 @@ static int set_inode(struct inode *inode, struct dentry *dentry)
 	struct dentry *h_dentry;
 	struct inode *h_inode;
 	struct au_iinfo *iinfo;
+	struct inode_operations *iop;
 
 	IiMustWriteLock(inode);
 
 	err = 0;
 	isdir = 0;
+	iop = au_sbi(inode->i_sb)->si_iop_array;
 	bstart = au_dbstart(dentry);
 	h_dentry = au_h_dptr(dentry, bstart);
 	h_inode = d_inode(h_dentry);
@@ -193,7 +208,7 @@ static int set_inode(struct inode *inode, struct dentry *dentry)
 	switch (mode & S_IFMT) {
 	case S_IFREG:
 		btail = au_dbtail(dentry);
-		inode->i_op = &aufs_iop;
+		inode->i_op = iop + AuIop_OTHER;
 		inode->i_fop = &aufs_file_fop;
 		err = au_dy_iaop(inode, bstart, h_inode);
 		if (unlikely(err))
@@ -202,19 +217,19 @@ static int set_inode(struct inode *inode, struct dentry *dentry)
 	case S_IFDIR:
 		isdir = 1;
 		btail = au_dbtaildir(dentry);
-		inode->i_op = &aufs_dir_iop;
+		inode->i_op = iop + AuIop_DIR;
 		inode->i_fop = &aufs_dir_fop;
 		break;
 	case S_IFLNK:
 		btail = au_dbtail(dentry);
-		inode->i_op = &aufs_symlink_iop;
+		inode->i_op = iop + AuIop_SYMLINK;
 		break;
 	case S_IFBLK:
 	case S_IFCHR:
 	case S_IFIFO:
 	case S_IFSOCK:
 		btail = au_dbtail(dentry);
-		inode->i_op = &aufs_iop;
+		inode->i_op = iop + AuIop_OTHER;
 		init_special_inode(inode, mode, h_inode->i_rdev);
 		break;
 	default:

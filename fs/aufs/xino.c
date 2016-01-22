@@ -1,18 +1,5 @@
 /*
  * Copyright (C) 2005-2015 Junjiro R. Okajima
- *
- * This program, aufs is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -53,6 +40,9 @@ ssize_t xino_fread(vfs_readf_t func, struct file *file, void *kbuf, size_t size,
 
 /* ---------------------------------------------------------------------- */
 
+static ssize_t xino_fwrite_wkq(vfs_writef_t func, struct file *file, void *buf,
+			       size_t size, loff_t *pos);
+
 static ssize_t do_xino_fwrite(vfs_writef_t func, struct file *file, void *kbuf,
 			      size_t size, loff_t *pos)
 {
@@ -62,14 +52,26 @@ static ssize_t do_xino_fwrite(vfs_writef_t func, struct file *file, void *kbuf,
 		void *k;
 		const char __user *u;
 	} buf;
+	int i;
+	const int prevent_endless = 10;
 
+	i = 0;
 	buf.k = kbuf;
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 	do {
-		/* todo: signal_pending? */
 		err = func(file, buf.u, size, pos);
-	} while (err == -EAGAIN || err == -EINTR);
+		if (err == -EINTR
+		    && !au_wkq_test()
+		    && fatal_signal_pending(current)) {
+			set_fs(oldfs);
+			err = xino_fwrite_wkq(func, file, kbuf, size, pos);
+			BUG_ON(err == -EINTR);
+			oldfs = get_fs();
+			set_fs(KERNEL_DS);
+		}
+	} while (i++ < prevent_endless
+		 && (err == -EAGAIN || err == -EINTR));
 	set_fs(oldfs);
 
 #if 0 /* reserved for future use */
@@ -95,35 +97,42 @@ static void call_do_xino_fwrite(void *args)
 	*a->errp = do_xino_fwrite(a->func, a->file, a->buf, a->size, a->pos);
 }
 
+static ssize_t xino_fwrite_wkq(vfs_writef_t func, struct file *file, void *buf,
+			       size_t size, loff_t *pos)
+{
+	ssize_t err;
+	int wkq_err;
+	struct do_xino_fwrite_args args = {
+		.errp	= &err,
+		.func	= func,
+		.file	= file,
+		.buf	= buf,
+		.size	= size,
+		.pos	= pos
+	};
+
+	/*
+	 * it breaks RLIMIT_FSIZE and normal user's limit,
+	 * users should care about quota and real 'filesystem full.'
+	 */
+	wkq_err = au_wkq_wait(call_do_xino_fwrite, &args);
+	if (unlikely(wkq_err))
+		err = wkq_err;
+
+	return err;
+}
+
 ssize_t xino_fwrite(vfs_writef_t func, struct file *file, void *buf,
 		    size_t size, loff_t *pos)
 {
 	ssize_t err;
 
-	/* todo: signal block and no wkq? */
 	if (rlimit(RLIMIT_FSIZE) == RLIM_INFINITY) {
 		lockdep_off();
 		err = do_xino_fwrite(func, file, buf, size, pos);
 		lockdep_on();
-	} else {
-		/*
-		 * it breaks RLIMIT_FSIZE and normal user's limit,
-		 * users should care about quota and real 'filesystem full.'
-		 */
-		int wkq_err;
-		struct do_xino_fwrite_args args = {
-			.errp	= &err,
-			.func	= func,
-			.file	= file,
-			.buf	= buf,
-			.size	= size,
-			.pos	= pos
-		};
-
-		wkq_err = au_wkq_wait(call_do_xino_fwrite, &args);
-		if (unlikely(wkq_err))
-			err = wkq_err;
-	}
+	} else
+		err = xino_fwrite_wkq(func, file, buf, size, pos);
 
 	return err;
 }
@@ -258,7 +267,7 @@ int au_xino_trunc(struct super_block *sb, aufs_bindex_t bindex)
 	struct au_xino_lock_dir ldir;
 
 	err = -ENOMEM;
-	st = kzalloc(sizeof(*st), GFP_NOFS);
+	st = kmalloc(sizeof(*st), GFP_NOFS);
 	if (unlikely(!st))
 		goto out;
 
@@ -1282,10 +1291,9 @@ int au_xino_path(struct seq_file *seq, struct file *file)
 	int err;
 
 	err = au_seq_path(seq, &file->f_path);
-	if (unlikely(err < 0))
+	if (unlikely(err))
 		goto out;
 
-	err = 0;
 #define Deleted "\\040(deleted)"
 	seq->count -= sizeof(Deleted) - 1;
 	AuDebugOn(memcmp(seq->buf + seq->count, Deleted,

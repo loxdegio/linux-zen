@@ -53,8 +53,8 @@ static int drm_dp_send_dpcd_write(struct drm_dp_mst_topology_mgr *mgr,
 				  struct drm_dp_mst_port *port,
 				  int offset, int size, u8 *bytes);
 
-static int drm_dp_send_link_address(struct drm_dp_mst_topology_mgr *mgr,
-				    struct drm_dp_mst_branch *mstb);
+static void drm_dp_send_link_address(struct drm_dp_mst_topology_mgr *mgr,
+				     struct drm_dp_mst_branch *mstb);
 static int drm_dp_send_enum_path_resources(struct drm_dp_mst_topology_mgr *mgr,
 					   struct drm_dp_mst_branch *mstb,
 					   struct drm_dp_mst_port *port);
@@ -861,28 +861,33 @@ static void drm_dp_destroy_port(struct kref *kref)
 {
 	struct drm_dp_mst_port *port = container_of(kref, struct drm_dp_mst_port, kref);
 	struct drm_dp_mst_topology_mgr *mgr = port->mgr;
+
 	if (!port->input) {
 		port->vcpi.num_slots = 0;
 
 		kfree(port->cached_edid);
 
-		/* we can't destroy the connector here, as
-		   we might be holding the mode_config.mutex
-		   from an EDID retrieval */
+		/*
+		 * The only time we don't have a connector
+		 * on an output port is if the connector init
+		 * fails.
+		 */
 		if (port->connector) {
+			/* we can't destroy the connector here, as
+			 * we might be holding the mode_config.mutex
+			 * from an EDID retrieval */
+
 			mutex_lock(&mgr->destroy_connector_lock);
-			list_add(&port->connector->destroy_list, &mgr->destroy_connector_list);
+			list_add(&port->next, &mgr->destroy_connector_list);
 			mutex_unlock(&mgr->destroy_connector_lock);
 			schedule_work(&mgr->destroy_connector_work);
+			return;
 		}
+		/* no need to clean up vcpi
+		 * as if we have no connector we never setup a vcpi */
 		drm_dp_port_teardown_pdt(port, port->pdt);
-
-		if (!port->input && port->vcpi.vcpi > 0)
-			drm_dp_mst_put_payload_id(mgr, port->vcpi.vcpi);
 	}
 	kfree(port);
-
-	(*mgr->cbs->hotplug)(mgr);
 }
 
 static void drm_dp_put_port(struct drm_dp_mst_port *port)
@@ -1024,8 +1029,8 @@ static void drm_dp_check_port_guid(struct drm_dp_mst_branch *mstb,
 	}
 }
 
-static void build_mst_prop_path(struct drm_dp_mst_port *port,
-				struct drm_dp_mst_branch *mstb,
+static void build_mst_prop_path(const struct drm_dp_mst_branch *mstb,
+				int pnum,
 				char *proppath,
 				size_t proppath_size)
 {
@@ -1038,7 +1043,7 @@ static void build_mst_prop_path(struct drm_dp_mst_port *port,
 		snprintf(temp, sizeof(temp), "-%d", port_num);
 		strlcat(proppath, temp, proppath_size);
 	}
-	snprintf(temp, sizeof(temp), "-%d", port->port_num);
+	snprintf(temp, sizeof(temp), "-%d", pnum);
 	strlcat(proppath, temp, proppath_size);
 }
 
@@ -1102,22 +1107,32 @@ static void drm_dp_add_port(struct drm_dp_mst_branch *mstb,
 		drm_dp_port_teardown_pdt(port, old_pdt);
 
 		ret = drm_dp_port_setup_pdt(port);
-		if (ret == true) {
+		if (ret == true)
 			drm_dp_send_link_address(mstb->mgr, port->mstb);
-			port->mstb->link_address_sent = true;
-		}
 	}
 
 	if (created && !port->input) {
 		char proppath[255];
-		build_mst_prop_path(port, mstb, proppath, sizeof(proppath));
-		port->connector = (*mstb->mgr->cbs->add_connector)(mstb->mgr, port, proppath);
 
-		if (port->port_num >= 8) {
-			port->cached_edid = drm_get_edid(port->connector, &port->aux.ddc);
+		build_mst_prop_path(mstb, port->port_num, proppath, sizeof(proppath));
+		port->connector = (*mstb->mgr->cbs->add_connector)(mstb->mgr, port, proppath);
+		if (!port->connector) {
+			/* remove it from the port list */
+			mutex_lock(&mstb->mgr->lock);
+			list_del(&port->next);
+			mutex_unlock(&mstb->mgr->lock);
+			/* drop port list reference */
+			drm_dp_put_port(port);
+			goto out;
 		}
+		if (port->port_num >= DP_MST_LOGICAL_PORT_0) {
+			port->cached_edid = drm_get_edid(port->connector, &port->aux.ddc);
+			drm_mode_connector_set_tile_property(port->connector);
+		}
+		(*mstb->mgr->cbs->register_connector)(port->connector);
 	}
 
+out:
 	/* put reference to this port */
 	drm_dp_put_port(port);
 }
@@ -1200,10 +1215,9 @@ static void drm_dp_check_and_send_link_address(struct drm_dp_mst_topology_mgr *m
 {
 	struct drm_dp_mst_port *port;
 	struct drm_dp_mst_branch *mstb_child;
-	if (!mstb->link_address_sent) {
+	if (!mstb->link_address_sent)
 		drm_dp_send_link_address(mgr, mstb);
-		mstb->link_address_sent = true;
-	}
+
 	list_for_each_entry(port, &mstb->ports, next) {
 		if (port->input)
 			continue;
@@ -1456,8 +1470,8 @@ static void drm_dp_queue_down_tx(struct drm_dp_mst_topology_mgr *mgr,
 	mutex_unlock(&mgr->qlock);
 }
 
-static int drm_dp_send_link_address(struct drm_dp_mst_topology_mgr *mgr,
-				    struct drm_dp_mst_branch *mstb)
+static void drm_dp_send_link_address(struct drm_dp_mst_topology_mgr *mgr,
+				     struct drm_dp_mst_branch *mstb)
 {
 	int len;
 	struct drm_dp_sideband_msg_tx *txmsg;
@@ -1465,11 +1479,12 @@ static int drm_dp_send_link_address(struct drm_dp_mst_topology_mgr *mgr,
 
 	txmsg = kzalloc(sizeof(*txmsg), GFP_KERNEL);
 	if (!txmsg)
-		return -ENOMEM;
+		return;
 
 	txmsg->dst = mstb;
 	len = build_link_address(txmsg);
 
+	mstb->link_address_sent = true;
 	drm_dp_queue_down_tx(mgr, txmsg);
 
 	ret = drm_dp_mst_wait_tx_reply(mstb, txmsg);
@@ -1497,11 +1512,12 @@ static int drm_dp_send_link_address(struct drm_dp_mst_topology_mgr *mgr,
 			}
 			(*mgr->cbs->hotplug)(mgr);
 		}
-	} else
+	} else {
+		mstb->link_address_sent = false;
 		DRM_DEBUG_KMS("link address failed %d\n", ret);
+	}
 
 	kfree(txmsg);
-	return 0;
 }
 
 static int drm_dp_send_enum_path_resources(struct drm_dp_mst_topology_mgr *mgr,
@@ -2263,10 +2279,10 @@ struct edid *drm_dp_mst_get_edid(struct drm_connector *connector, struct drm_dp_
 
 	if (port->cached_edid)
 		edid = drm_edid_duplicate(port->cached_edid);
-	else
+	else {
 		edid = drm_get_edid(connector, &port->aux.ddc);
-
-	drm_mode_connector_set_tile_property(connector);
+		drm_mode_connector_set_tile_property(connector);
+	}
 	drm_dp_put_port(port);
 	return edid;
 }
@@ -2632,6 +2648,16 @@ void drm_dp_mst_dump_topology(struct seq_file *m,
 			seq_printf(m, "%02x ", buf[i]);
 		seq_printf(m, "\n");
 
+		/* dump the standard OUI branch header */
+		ret = drm_dp_dpcd_read(mgr->aux, DP_BRANCH_OUI, buf, DP_BRANCH_OUI_HEADER_SIZE);
+		seq_printf(m, "branch oui: ");
+		for (i = 0; i < 0x3; i++)
+			seq_printf(m, "%02x", buf[i]);
+		seq_printf(m, " devid: ");
+		for (i = 0x3; i < 0x8; i++)
+			seq_printf(m, "%c", buf[i]);
+		seq_printf(m, " revision: hw: %x.%x sw: %x.%x", buf[0x9] >> 4, buf[0x9] & 0xf, buf[0xa], buf[0xb]);
+		seq_printf(m, "\n");
 		bret = dump_dp_payload_table(mgr, buf);
 		if (bret == true) {
 			seq_printf(m, "payload table: ");
@@ -2660,8 +2686,8 @@ static void drm_dp_tx_work(struct work_struct *work)
 static void drm_dp_destroy_connector_work(struct work_struct *work)
 {
 	struct drm_dp_mst_topology_mgr *mgr = container_of(work, struct drm_dp_mst_topology_mgr, destroy_connector_work);
-	struct drm_connector *connector;
-
+	struct drm_dp_mst_port *port;
+	bool send_hotplug = false;
 	/*
 	 * Not a regular list traverse as we have to drop the destroy
 	 * connector lock before destroying the connector, to avoid AB->BA
@@ -2669,16 +2695,25 @@ static void drm_dp_destroy_connector_work(struct work_struct *work)
 	 */
 	for (;;) {
 		mutex_lock(&mgr->destroy_connector_lock);
-		connector = list_first_entry_or_null(&mgr->destroy_connector_list, struct drm_connector, destroy_list);
-		if (!connector) {
+		port = list_first_entry_or_null(&mgr->destroy_connector_list, struct drm_dp_mst_port, next);
+		if (!port) {
 			mutex_unlock(&mgr->destroy_connector_lock);
 			break;
 		}
-		list_del(&connector->destroy_list);
+		list_del(&port->next);
 		mutex_unlock(&mgr->destroy_connector_lock);
 
-		mgr->cbs->destroy_connector(mgr, connector);
+		mgr->cbs->destroy_connector(mgr, port->connector);
+
+		drm_dp_port_teardown_pdt(port, port->pdt);
+
+		if (!port->input && port->vcpi.vcpi > 0)
+			drm_dp_mst_put_payload_id(mgr, port->vcpi.vcpi);
+		kfree(port);
+		send_hotplug = true;
 	}
+	if (send_hotplug)
+		(*mgr->cbs->hotplug)(mgr);
 }
 
 /**

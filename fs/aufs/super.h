@@ -1,18 +1,5 @@
 /*
  * Copyright (C) 2005-2015 Junjiro R. Okajima
- *
- * This program, aufs is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -143,6 +130,9 @@ struct au_sbinfo {
 	/* include/asm-ia64/siginfo.h defines a macro named si_flags */
 	unsigned int		si_mntflags;
 
+	/* symlink to follow_link() and put_link() */
+	struct au_sphlhead	si_symlink;
+
 	/* external inode number (bitmap and translation table) */
 	vfs_readf_t		si_xread;
 	vfs_writef_t		si_xwrite;
@@ -188,6 +178,9 @@ struct au_sbinfo {
 	/* file list */
 	struct au_sphlhead	si_files;
 
+	/* with/without getattr, brother of sb->s_d_op */
+	struct inode_operations *si_iop_array;
+
 	/*
 	 * sysfs and lifetime management.
 	 * this is not a small structure and it may be a waste of memory in case
@@ -219,8 +212,8 @@ struct au_sbinfo {
  * if it is false, refreshing dirs at access time is unnecesary
  */
 #define AuSi_FAILED_REFRESH_DIR	1
-
 #define AuSi_FHSM		(1 << 1)	/* fhsm is active now */
+#define AuSi_NO_DREVAL		(1 << 2)	/* disable all d_revalidate */
 
 #ifndef CONFIG_AUFS_FHSM
 #undef AuSi_FHSM
@@ -256,7 +249,7 @@ static inline unsigned char au_do_ftest_si(struct au_sbinfo *sbi,
 #define AuLock_IR		(1 << 1)	/* read-lock inode */
 #define AuLock_IW		(1 << 2)	/* write-lock inode */
 #define AuLock_FLUSH		(1 << 3)	/* wait for 'nowait' tasks */
-#define AuLock_DIR		(1 << 4)	/* target is a dir */
+#define AuLock_DIRS		(1 << 4)	/* target is a pair of dirs */
 #define AuLock_NOPLM		(1 << 5)	/* return err in plm mode */
 #define AuLock_NOPLMW		(1 << 6)	/* wait for plm mode ends */
 #define AuLock_GEN		(1 << 7)	/* test digen/iigen */
@@ -271,10 +264,10 @@ static inline unsigned char au_do_ftest_si(struct au_sbinfo *sbi,
 /* super.c */
 extern struct file_system_type aufs_fs_type;
 struct inode *au_iget_locked(struct super_block *sb, ino_t ino);
-typedef unsigned long long (*au_arraycb_t)(void *array, unsigned long long max,
-					   void *arg);
-void au_array_free(void *array);
-void *au_array_alloc(unsigned long long *hint, au_arraycb_t cb, void *arg);
+typedef unsigned long long (*au_arraycb_t)(struct super_block *sb, void *array,
+					   unsigned long long max, void *arg);
+void *au_array_alloc(unsigned long long *hint, au_arraycb_t cb,
+		     struct super_block *sb, void *arg);
 struct inode **au_iarray_alloc(struct super_block *sb, unsigned long long *max);
 void au_iarray_free(struct inode **a, unsigned long long max);
 

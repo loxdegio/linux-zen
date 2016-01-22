@@ -1,18 +1,5 @@
 /*
  * Copyright (C) 2005-2015 Junjiro R. Okajima
- *
- * This program, aufs is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -53,7 +40,7 @@ static unsigned char *last_deblk(struct au_vdir *vdir)
 
 /* ---------------------------------------------------------------------- */
 
-/* estimate the apropriate size for name hash table */
+/* estimate the appropriate size for name hash table */
 unsigned int au_rdhash_est(loff_t sz)
 {
 	unsigned int n;
@@ -379,7 +366,7 @@ static struct au_vdir *alloc_vdir(struct file *file)
 
 	vdir->vd_deblk_sz = au_sbi(sb)->si_rdblk;
 	if (!vdir->vd_deblk_sz) {
-		/* estimate the apropriate size for deblk */
+		/* estimate the appropriate size for deblk */
 		vdir->vd_deblk_sz = au_dir_size(file, /*dentry*/NULL);
 		/* pr_info("vd_deblk_sz %u\n", vdir->vd_deblk_sz); */
 	}

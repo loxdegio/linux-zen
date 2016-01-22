@@ -27,7 +27,7 @@
 
 static void early_init_intel(struct cpuinfo_x86 *c)
 {
-	bool allow_fast_string = true;
+	u64 misc_enable;
 
 	/* Unmask CPUID levels if masked: */
 	if (c->x86 > 6 || (c->x86 == 6 && c->x86_model >= 0xd)) {
@@ -97,6 +97,7 @@ static void early_init_intel(struct cpuinfo_x86 *c)
 		switch (c->x86_model) {
 		case 0x27:	/* Penwell */
 		case 0x35:	/* Cloverview */
+		case 0x4a:	/* Merrifield */
 			set_cpu_cap(c, X86_FEATURE_NONSTOP_TSC_S3);
 			break;
 		default:
@@ -126,28 +127,17 @@ static void early_init_intel(struct cpuinfo_x86 *c)
 	 * Ingo Molnar reported a Pentium D (model 6) and a Xeon
 	 * (model 2) with the same problem.
 	 */
-	if (c->x86 == 15) {
-		allow_fast_string = false;
-
+	if (c->x86 == 15)
 		if (msr_clear_bit(MSR_IA32_MISC_ENABLE,
 				  MSR_IA32_MISC_ENABLE_FAST_STRING_BIT) > 0)
 			pr_info("kmemcheck: Disabling fast string operations\n");
-	}
 #endif
 
 	/*
-	 * If BIOS didn't enable fast string operation, try to enable
-	 * it ourselves.  If that fails, then clear the fast string
-	 * and enhanced fast string CPU capabilities.
+	 * If fast string is not enabled in IA32_MISC_ENABLE for any reason,
+	 * clear the fast string and enhanced fast string CPU capabilities.
 	 */
 	if (c->x86 > 6 || (c->x86 == 6 && c->x86_model >= 0xd)) {
-		u64 misc_enable;
-
-		if (allow_fast_string &&
-		    msr_set_bit(MSR_IA32_MISC_ENABLE,
-				MSR_IA32_MISC_ENABLE_FAST_STRING_BIT) > 0)
-			pr_info(FW_WARN "IA32_MISC_ENABLE.FAST_STRING_ENABLE was not set\n");
-
 		rdmsrl(MSR_IA32_MISC_ENABLE, misc_enable);
 		if (!(misc_enable & MSR_IA32_MISC_ENABLE_FAST_STRING)) {
 			printk(KERN_INFO "Disabled fast string operations\n");
@@ -382,6 +372,36 @@ static void detect_vmx_virtcap(struct cpuinfo_x86 *c)
 	}
 }
 
+static void init_intel_energy_perf(struct cpuinfo_x86 *c)
+{
+	u64 epb;
+
+	/*
+	 * Initialize MSR_IA32_ENERGY_PERF_BIAS if not already initialized.
+	 * (x86_energy_perf_policy(8) is available to change it at run-time.)
+	 */
+	if (!cpu_has(c, X86_FEATURE_EPB))
+		return;
+
+	rdmsrl(MSR_IA32_ENERGY_PERF_BIAS, epb);
+	if ((epb & 0xF) != ENERGY_PERF_BIAS_PERFORMANCE)
+		return;
+
+	pr_warn_once("ENERGY_PERF_BIAS: Set to 'normal', was 'performance'\n");
+	pr_warn_once("ENERGY_PERF_BIAS: View and update with x86_energy_perf_policy(8)\n");
+	epb = (epb & ~0xF) | ENERGY_PERF_BIAS_NORMAL;
+	wrmsrl(MSR_IA32_ENERGY_PERF_BIAS, epb);
+}
+
+static void intel_bsp_resume(struct cpuinfo_x86 *c)
+{
+	/*
+	 * MSR_IA32_ENERGY_PERF_BIAS is lost across suspend/resume,
+	 * so reinitialize it properly like during bootup:
+	 */
+	init_intel_energy_perf(c);
+}
+
 static void init_intel(struct cpuinfo_x86 *c)
 {
 	unsigned int l2 = 0;
@@ -489,39 +509,7 @@ static void init_intel(struct cpuinfo_x86 *c)
 	if (cpu_has(c, X86_FEATURE_VMX))
 		detect_vmx_virtcap(c);
 
-	/*
-	 * Initialize MSR_IA32_ENERGY_PERF_BIAS if BIOS did not.
-	 * x86_energy_perf_policy(8) is available to change it at run-time
-	 */
-	if (cpu_has(c, X86_FEATURE_EPB)) {
-		u64 epb;
-
-		rdmsrl(MSR_IA32_ENERGY_PERF_BIAS, epb);
-		if ((epb & 0xF) == ENERGY_PERF_BIAS_PERFORMANCE) {
-			pr_warn_once("ENERGY_PERF_BIAS: Set to 'normal', was 'performance'\n");
-			pr_warn_once("ENERGY_PERF_BIAS: View and update with x86_energy_perf_policy(8)\n");
-			epb = (epb & ~0xF) | ENERGY_PERF_BIAS_NORMAL;
-			wrmsrl(MSR_IA32_ENERGY_PERF_BIAS, epb);
-		}
-	}
-
-	/* Enable monitor/mwait if BIOS didn't do it for us. */
-	if (!cpu_has(c, X86_FEATURE_MWAIT) && cpu_has(c, X86_FEATURE_XMM3)
-	    && c->x86 >= 6 && !(c->x86 == 6 && c->x86_model < 0x1c)
-	    && !(c->x86 == 0xf && c->x86_model < 3)) {
-		/*
-		 * Some non-SSE3 cpus will #GP.  We check for that,
-		 * but it can't hurt to be safe.
-		 */
-		msr_set_bit(MSR_IA32_MISC_ENABLE, MSR_IA32_MISC_ENABLE_MWAIT_BIT);
-
-		/* Re-read monitor capability. */
-		if (cpuid_ecx(1) & 0x8) {
-			set_cpu_cap(c, X86_FEATURE_MWAIT);
-
-			printk(KERN_WARNING FW_WARN "IA32_MISC_ENABLE.ENABLE_MONITOR_FSM was not set\n");
-		}
-	}
+	init_intel_energy_perf(c);
 }
 
 #ifdef CONFIG_X86_32
@@ -776,6 +764,7 @@ static const struct cpu_dev intel_cpu_dev = {
 	.c_detect_tlb	= intel_detect_tlb,
 	.c_early_init   = early_init_intel,
 	.c_init		= init_intel,
+	.c_bsp_resume	= intel_bsp_resume,
 	.c_x86_vendor	= X86_VENDOR_INTEL,
 };
 

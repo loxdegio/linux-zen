@@ -1,18 +1,5 @@
 /*
  * Copyright (C) 2005-2015 Junjiro R. Okajima
- *
- * This program, aufs is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -32,7 +19,6 @@
 /* copied from linux/fs/internal.h */
 /* todo: BAD approach!! */
 extern void __mnt_drop_write(struct vfsmount *);
-extern spinlock_t inode_sb_list_lock;
 extern int open_check_o_direct(struct file *f);
 
 /* ---------------------------------------------------------------------- */
@@ -196,6 +182,7 @@ static inline void vfsub_file_accessed(struct file *h_file)
 }
 #endif
 
+#if 0 /* reserved */
 static inline void vfsub_touch_atime(struct vfsmount *h_mnt,
 				     struct dentry *h_dentry)
 {
@@ -206,6 +193,7 @@ static inline void vfsub_touch_atime(struct vfsmount *h_mnt,
 	touch_atime(&h_path);
 	vfsub_update_h_iattr(&h_path, /*did*/NULL); /*ignore*/
 }
+#endif
 
 static inline int vfsub_update_time(struct inode *h_inode, struct timespec *ts,
 				    int flags)

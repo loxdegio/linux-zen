@@ -1,18 +1,5 @@
 /*
  * Copyright (C) 2005-2015 Junjiro R. Okajima
- *
- * This program, aufs is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -77,14 +64,14 @@ static void sysrq_sb(struct super_block *sb)
 		struct inode *i;
 
 		pr("isolated inode\n");
-		spin_lock(&inode_sb_list_lock);
+		spin_lock(&sb->s_inode_list_lock);
 		list_for_each_entry(i, &sb->s_inodes, i_sb_list) {
 			spin_lock(&i->i_lock);
 			if (1 || hlist_empty(&i->i_dentry))
 				au_dpri_inode(i);
 			spin_unlock(&i->i_lock);
 		}
-		spin_unlock(&inode_sb_list_lock);
+		spin_unlock(&sb->s_inode_list_lock);
 	}
 #endif
 	pr("files\n");

@@ -5172,7 +5172,7 @@ static int alt_playback_pcm_open(struct hda_pcm_stream *hinfo,
 	int err = 0;
 
 	mutex_lock(&spec->pcm_mutex);
-	if (!spec->indep_hp_enabled)
+	if (spec->indep_hp && !spec->indep_hp_enabled)
 		err = -EBUSY;
 	else
 		spec->active_streams |= 1 << STREAM_INDEP_HP;
@@ -5877,13 +5877,14 @@ error:
 	return err;
 }
 
-static const struct hda_codec_preset snd_hda_preset_generic[] = {
-	{ .id = HDA_CODEC_ID_GENERIC, .patch = snd_hda_parse_generic_codec },
+static const struct hda_device_id snd_hda_id_generic[] = {
+	HDA_CODEC_ENTRY(HDA_CODEC_ID_GENERIC, "Generic", snd_hda_parse_generic_codec),
 	{} /* terminator */
 };
+MODULE_DEVICE_TABLE(hdaudio, snd_hda_id_generic);
 
 static struct hda_codec_driver generic_driver = {
-	.preset = snd_hda_preset_generic,
+	.id = snd_hda_id_generic,
 };
 
 module_hda_codec_driver(generic_driver);

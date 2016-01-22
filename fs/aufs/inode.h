@@ -1,18 +1,5 @@
 /*
  * Copyright (C) 2005-2015 Junjiro R. Okajima
- *
- * This program, aufs is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -59,12 +46,12 @@ struct au_hinode {
 	do { (flags) &= ~AuIG_##name; } while (0)
 
 struct au_iigen {
+	spinlock_t	ig_spin;
 	__u32		ig_generation, ig_flags;
 };
 
 struct au_vdir;
 struct au_iinfo {
-	spinlock_t		ii_genspin;
 	struct au_iigen		ii_generation;
 	struct super_block	*ii_hsb1;	/* no get/put */
 
@@ -130,6 +117,7 @@ static inline struct au_iinfo *au_ii(struct inode *inode)
 
 /* inode.c */
 struct inode *au_igrab(struct inode *inode);
+void au_refresh_iop(struct inode *inode, int force_getattr);
 int au_refresh_hinode_self(struct inode *inode);
 int au_refresh_hinode(struct inode *inode, struct dentry *dentry);
 int au_ino(struct super_block *sb, aufs_bindex_t bindex, ino_t h_ino,
@@ -151,7 +139,14 @@ static inline int au_wh_ino(struct super_block *sb, aufs_bindex_t bindex,
 }
 
 /* i_op.c */
-extern struct inode_operations aufs_iop, aufs_symlink_iop, aufs_dir_iop;
+enum {
+	AuIop_SYMLINK,
+	AuIop_DIR,
+	AuIop_OTHER,
+	AuIop_Last
+};
+extern struct inode_operations aufs_iop[AuIop_Last],
+	aufs_iop_nogetattr[AuIop_Last];
 
 /* au_wr_dir flags */
 #define AuWrDir_ADD_ENTRY	1
@@ -414,17 +409,19 @@ static inline void au_icntnr_init(struct au_icntnr *c)
 #endif
 }
 
-static inline unsigned int au_iigen(struct inode *inode, struct au_iigen *iigen)
+static inline unsigned int au_iigen(struct inode *inode, struct au_iigen *iigen_arg)
 {
 	unsigned int gen;
 	struct au_iinfo *iinfo;
+	struct au_iigen *iigen;
 
 	iinfo = au_ii(inode);
-	spin_lock(&iinfo->ii_genspin);
-	if (iigen)
-		*iigen = iinfo->ii_generation;
-	gen = iinfo->ii_generation.ig_generation;
-	spin_unlock(&iinfo->ii_genspin);
+	iigen = &iinfo->ii_generation;
+	spin_lock(&iigen->ig_spin);
+	if (iigen_arg)
+		*iigen_arg = *iigen;
+	gen = iigen->ig_generation;
+	spin_unlock(&iigen->ig_spin);
 
 	return gen;
 }
@@ -444,11 +441,13 @@ static inline int au_test_higen(struct inode *inode, struct inode *h_inode)
 static inline void au_iigen_dec(struct inode *inode)
 {
 	struct au_iinfo *iinfo;
+	struct au_iigen *iigen;
 
 	iinfo = au_ii(inode);
-	spin_lock(&iinfo->ii_genspin);
-	iinfo->ii_generation.ig_generation--;
-	spin_unlock(&iinfo->ii_genspin);
+	iigen = &iinfo->ii_generation;
+	spin_lock(&iigen->ig_spin);
+	iigen->ig_generation--;
+	spin_unlock(&iigen->ig_spin);
 }
 
 static inline int au_iigen_test(struct inode *inode, unsigned int sigen)

@@ -1,18 +1,5 @@
 /*
  * Copyright (C) 2005-2015 Junjiro R. Okajima
- *
- * This program, aufs is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -118,13 +105,13 @@ void au_update_iigen(struct inode *inode, int half)
 	sigen = au_sigen(inode->i_sb);
 	iinfo = au_ii(inode);
 	iigen = &iinfo->ii_generation;
-	spin_lock(&iinfo->ii_genspin);
+	spin_lock(&iigen->ig_spin);
 	iigen->ig_generation = sigen;
 	if (half)
 		au_ig_fset(iigen->ig_flags, HALF_REFRESHED);
 	else
 		au_ig_fclr(iigen->ig_flags, HALF_REFRESHED);
-	spin_unlock(&iinfo->ii_genspin);
+	spin_unlock(&iigen->ig_spin);
 }
 
 /* it may be called at remount time, too */
@@ -177,7 +164,7 @@ void au_icntnr_init_once(void *_c)
 	struct au_iinfo *iinfo = &c->iinfo;
 	static struct lock_class_key aufs_ii;
 
-	spin_lock_init(&iinfo->ii_genspin);
+	spin_lock_init(&iinfo->ii_generation.ig_spin);
 	au_rw_init(&iinfo->ii_rwsem);
 	au_rw_class(&iinfo->ii_rwsem, &aufs_ii);
 	inode_init_once(&c->vfs_inode);
