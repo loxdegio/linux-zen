@@ -531,7 +531,10 @@ void intel_detect_pch(struct drm_device *dev)
 				dev_priv->pch_type = PCH_SPT;
 				DRM_DEBUG_KMS("Found SunrisePoint LP PCH\n");
 				WARN_ON(!IS_SKYLAKE(dev));
-			} else if (id == INTEL_PCH_P2X_DEVICE_ID_TYPE) {
+			} else if ((id == INTEL_PCH_P2X_DEVICE_ID_TYPE) ||
+				   ((id == INTEL_PCH_QEMU_DEVICE_ID_TYPE) &&
+				    pch->subsystem_vendor == 0x1af4 &&
+				    pch->subsystem_device == 0x1100)) {
 				dev_priv->pch_type = intel_virt_detect_pch(dev);
 			} else
 				continue;
@@ -778,11 +781,11 @@ static int i915_drm_resume(struct drm_device *dev)
 		dev_priv->display.hpd_irq_setup(dev);
 	spin_unlock_irq(&dev_priv->irq_lock);
 
+	intel_dp_mst_resume(dev);
+
 	drm_modeset_lock_all(dev);
 	intel_display_resume(dev);
 	drm_modeset_unlock_all(dev);
-
-	intel_dp_mst_resume(dev);
 
 	/*
 	 * ... but also need to make sure that hotplug processing
