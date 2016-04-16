@@ -877,9 +877,25 @@ config SCHED_SMT
 	depends on SMP
 	---help---
 	  SMT scheduler support improves the CPU scheduler's decision making
-	  when dealing with Intel Pentium 4 chips with HyperThreading at a
+	  when dealing with Intel P4/Core 2 chips with HyperThreading at a
 	  cost of slightly increased overhead in some places. If unsure say
 	  N here.
+
+config SMT_NICE
+	bool "SMT (Hyperthreading) aware nice priority and policy support"
+	depends on SCHED_BFS && SCHED_SMT
+	default y
+	---help---
+	  Enabling Hyperthreading on Intel CPUs decreases the effectiveness
+	  of the use of 'nice' levels and different scheduling policies
+	  (e.g. realtime) due to sharing of CPU power between hyperthreads.
+	  SMT nice support makes each logical CPU aware of what is running on
+	  its hyperthread siblings, maintaining appropriate distribution of
+	  CPU according to nice levels and scheduling policies at the expense
+	  of slightly increased overhead.
+
+	  If unsure say Y here.
+
 
 config SCHED_MC
 	def_bool y
@@ -1126,22 +1142,23 @@ config MICROCODE
 	bool "CPU microcode loading support"
 	default y
 	depends on CPU_SUP_AMD || CPU_SUP_INTEL
-	depends on BLK_DEV_INITRD
 	select FW_LOADER
 	---help---
-
 	  If you say Y here, you will be able to update the microcode on
-	  certain Intel and AMD processors. The Intel support is for the
-	  IA32 family, e.g. Pentium Pro, Pentium II, Pentium III, Pentium 4,
-	  Xeon etc. The AMD support is for families 0x10 and later. You will
-	  obviously need the actual microcode binary data itself which is not
-	  shipped with the Linux kernel.
+	  Intel and AMD processors. The Intel support is for the IA32 family,
+	  e.g. Pentium Pro, Pentium II, Pentium III, Pentium 4, Xeon etc. The
+	  AMD support is for families 0x10 and later. You will obviously need
+	  the actual microcode binary data itself which is not shipped with
+	  the Linux kernel.
 
-	  This option selects the general module only, you need to select
-	  at least one vendor specific module as well.
+	  The preferred method to load microcode from a detached initrd is described
+	  in Documentation/x86/early-microcode.txt. For that you need to enable
+	  CONFIG_BLK_DEV_INITRD in order for the loader to be able to scan the
+	  initrd for microcode blobs.
 
-	  To compile this driver as a module, choose M here: the module
-	  will be called microcode.
+	  In addition, you can build-in the microcode into the kernel. For that you
+	  need to enable FIRMWARE_IN_KERNEL and add the vendor-supplied microcode
+	  to the CONFIG_EXTRA_FIRMWARE config option.
 
 config MICROCODE_INTEL
 	bool "Intel microcode loading support"
@@ -1961,7 +1978,7 @@ config HOTPLUG_CPU
 config BOOTPARAM_HOTPLUG_CPU0
 	bool "Set default setting of cpu0_hotpluggable"
 	default n
-	depends on HOTPLUG_CPU
+	depends on HOTPLUG_CPU && !SCHED_BFS
 	---help---
 	  Set whether default state of cpu0_hotpluggable is on or off.
 
@@ -1990,7 +2007,7 @@ config BOOTPARAM_HOTPLUG_CPU0
 config DEBUG_HOTPLUG_CPU0
 	def_bool n
 	prompt "Debug CPU0 hotplug"
-	depends on HOTPLUG_CPU
+	depends on HOTPLUG_CPU && !SCHED_BFS
 	---help---
 	  Enabling this option offlines CPU0 (if CPU0 can be offlined) as
 	  soon as possible and boots up userspace with CPU0 offlined. User

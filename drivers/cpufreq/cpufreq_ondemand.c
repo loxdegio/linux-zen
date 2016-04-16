@@ -152,7 +152,7 @@ static void dbs_freq_increase(struct cpufreq_policy *policy, unsigned int freq)
 }
 
 /*
- * Every sampling_rate, we check, if current idle time is less than 20%
+ * Every sampling_rate, we check, if current idle time is less than 37%
  * (default), then we try to increase frequency. Else, we adjust the frequency
  * proportional to load.
  */
