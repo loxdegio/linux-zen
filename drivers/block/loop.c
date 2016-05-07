@@ -488,6 +488,12 @@ static int lo_rw_aio(struct loop_device *lo, struct loop_cmd *cmd,
 	bvec = __bvec_iter_bvec(bio->bi_io_vec, bio->bi_iter);
 	iov_iter_bvec(&iter, ITER_BVEC | rw, bvec,
 		      bio_segments(bio), blk_rq_bytes(cmd->rq));
+	/*
+	 * This bio may be started from the middle of the 'bvec'
+	 * because of bio splitting, so offset from the bvec must
+	 * be passed to iov iterator
+	 */
+	iter.iov_offset = bio->bi_iter.bi_bvec_done;
 
 	cmd->iocb.ki_pos = pos;
 	cmd->iocb.ki_filp = file;
@@ -705,24 +711,6 @@ static inline int is_loop_device(struct file *file)
 
 	return i && S_ISBLK(i->i_mode) && MAJOR(i->i_rdev) == LOOP_MAJOR;
 }
-
-/*
- * for AUFS
- * no get/put for file.
- */
-struct file *loop_backing_file(struct super_block *sb)
-{
-	struct file *ret;
-	struct loop_device *l;
-
-	ret = NULL;
-	if (MAJOR(sb->s_dev) == LOOP_MAJOR) {
-		l = sb->s_bdev->bd_disk->private_data;
-		ret = l->lo_backing_file;
-	}
-	return ret;
-}
-EXPORT_SYMBOL_GPL(loop_backing_file);
 
 /* loop sysfs attributes */
 
