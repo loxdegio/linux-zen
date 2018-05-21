@@ -1850,8 +1850,12 @@ static int validate_branch(struct objtool_file *file, struct instruction *first,
 				return 0;
 			if (ret == -1)
 				return 1;
-
-			/* fallthrough */
+			if (!no_fp && func && !has_valid_stack_frame(&state)) {
+				WARN_FUNC("call without frame pointer save/setup",
+					  sec, insn->offset);
+				return 1;
+			}
+			break;
 		case INSN_CALL_DYNAMIC:
 			if (!no_fp && func && !has_valid_stack_frame(&state)) {
 				WARN_FUNC("call without frame pointer save/setup",
