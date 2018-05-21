@@ -1,14 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0
 
 #include <linux/slab.h>
 #include <linux/fs.h>
 #include <linux/seq_file.h>
 #include <linux/proc_fs.h>
 
-#ifndef CONFIG_SCHED_BFS
 #include "sched.h"
-#else
-#include "bfs_sched.h"
-#endif
 
 /*
  * bump this up when changing the output format or the meaning of an existing

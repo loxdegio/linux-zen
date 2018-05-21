@@ -28,7 +28,6 @@
 #include <sound/asoundef.h>
 #include <sound/omap-pcm.h>
 #include <sound/omap-hdmi-audio.h>
-#include <video/omapdss.h>
 
 #define DRV_NAME "omap-hdmi-audio"
 
@@ -338,13 +337,11 @@ static int omap_hdmi_audio_probe(struct platform_device *pdev)
 	ad->dma_data.addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
 	mutex_init(&ad->current_stream_lock);
 
-	switch (ha->dss_version) {
-	case OMAPDSS_VER_OMAP4430_ES1:
-	case OMAPDSS_VER_OMAP4430_ES2:
-	case OMAPDSS_VER_OMAP4:
+	switch (ha->version) {
+	case 4:
 		dai_drv = &omap4_hdmi_dai;
 		break;
-	case OMAPDSS_VER_OMAP5:
+	case 5:
 		dai_drv = &omap5_hdmi_dai;
 		break;
 	default:
@@ -368,6 +365,8 @@ static int omap_hdmi_audio_probe(struct platform_device *pdev)
 	card->owner = THIS_MODULE;
 	card->dai_link =
 		devm_kzalloc(dev, sizeof(*(card->dai_link)), GFP_KERNEL);
+	if (!card->dai_link)
+		return -ENOMEM;
 	card->dai_link->name = card->name;
 	card->dai_link->stream_name = card->name;
 	card->dai_link->cpu_dai_name = dev_name(ad->dssdev);

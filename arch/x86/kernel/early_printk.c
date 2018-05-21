@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/console.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -17,6 +18,7 @@
 #include <asm/intel-mid.h>
 #include <asm/pgtable.h>
 #include <linux/usb/ehci_def.h>
+#include <linux/usb/xhci-dbgp.h>
 #include <linux/efi.h>
 #include <asm/efi.h>
 #include <asm/pci_x86.h>
@@ -27,8 +29,7 @@
 static int max_ypos = 25, max_xpos = 80;
 static int current_ypos = 25, current_xpos;
 
-static void early_vga_write(struct console *con, const char *str, unsigned n,
-                            unsigned int loglevel)
+static void early_vga_write(struct console *con, const char *str, unsigned n)
 {
 	char c;
 	int  i, k, j;
@@ -119,8 +120,7 @@ static int early_serial_putc(unsigned char ch)
 	return timeout ? 0 : -1;
 }
 
-static void early_serial_write(struct console *con, const char *s, unsigned n,
-                               unsigned int loglevel)
+static void early_serial_write(struct console *con, const char *s, unsigned n)
 {
 	while (*s && n-- > 0) {
 		if (*s == '\n')
@@ -289,7 +289,7 @@ static __init void early_pci_serial_init(char *s)
 	}
 
 	/*
-	 * Lastly, initalize the hardware
+	 * Lastly, initialize the hardware
 	 */
 	if (*s) {
 		if (strcmp(s, "nocfg") == 0)
@@ -382,6 +382,10 @@ static int __init setup_early_printk(char *buf)
 #ifdef CONFIG_EARLY_PRINTK_EFI
 		if (!strncmp(buf, "efi", 3))
 			early_console_register(&early_efi_console, keep);
+#endif
+#ifdef CONFIG_EARLY_PRINTK_USB_XDBC
+		if (!strncmp(buf, "xdbc", 4))
+			early_xdbc_parse_parameter(buf + 4);
 #endif
 
 		buf++;

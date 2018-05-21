@@ -26,8 +26,6 @@
 #include <linux/regulator/consumer.h>
 #include <video/videomode.h>
 
-#include <asm/gpio.h>
-
 #include <video/atmel_lcdc.h>
 
 struct atmel_lcdfb_config {
@@ -322,7 +320,7 @@ static inline void atmel_lcdfb_power_control(struct atmel_lcdfb_info *sinfo, int
 	}
 }
 
-static struct fb_fix_screeninfo atmel_lcdfb_fix __initdata = {
+static const struct fb_fix_screeninfo atmel_lcdfb_fix __initconst = {
 	.type		= FB_TYPE_PACKED_PIXELS,
 	.visual		= FB_VISUAL_TRUECOLOR,
 	.xpanstep	= 0,
@@ -414,8 +412,8 @@ static inline void atmel_lcdfb_free_video_memory(struct atmel_lcdfb_info *sinfo)
 {
 	struct fb_info *info = sinfo->info;
 
-	dma_free_writecombine(info->device, info->fix.smem_len,
-				info->screen_base, info->fix.smem_start);
+	dma_free_wc(info->device, info->fix.smem_len, info->screen_base,
+		    info->fix.smem_start);
 }
 
 /**
@@ -435,8 +433,9 @@ static int atmel_lcdfb_alloc_video_memory(struct atmel_lcdfb_info *sinfo)
 		    * ((var->bits_per_pixel + 7) / 8));
 	info->fix.smem_len = max(smem_len, sinfo->smem_len);
 
-	info->screen_base = dma_alloc_writecombine(info->device, info->fix.smem_len,
-					(dma_addr_t *)&info->fix.smem_start, GFP_KERNEL);
+	info->screen_base = dma_alloc_wc(info->device, info->fix.smem_len,
+					 (dma_addr_t *)&info->fix.smem_start,
+					 GFP_KERNEL);
 
 	if (!info->screen_base) {
 		return -ENOMEM;
@@ -1120,7 +1119,7 @@ static int atmel_lcdfb_of_init(struct atmel_lcdfb_info *sinfo)
 		goto put_display_node;
 	}
 
-	timings_np = of_find_node_by_name(display_np, "display-timings");
+	timings_np = of_get_child_by_name(display_np, "display-timings");
 	if (!timings_np) {
 		dev_err(dev, "failed to find display-timings node\n");
 		ret = -ENODEV;
@@ -1140,6 +1139,12 @@ static int atmel_lcdfb_of_init(struct atmel_lcdfb_info *sinfo)
 
 		fb_add_videomode(&fb_vm, &info->modelist);
 	}
+
+	/*
+	 * FIXME: Make sure we are not referencing any fields in display_np
+	 * and timings_np and drop our references to them before returning to
+	 * avoid leaking the nodes on probe deferral and driver unbind.
+	 */
 
 	return 0;
 

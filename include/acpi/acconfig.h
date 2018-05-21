@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2015, Intel Corp.
+ * Copyright (C) 2000 - 2017, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -78,6 +78,7 @@
 #define ACPI_MAX_EXTPARSE_CACHE_DEPTH   96	/* Parse tree objects */
 #define ACPI_MAX_OBJECT_CACHE_DEPTH     96	/* Interpreter operand objects */
 #define ACPI_MAX_NAMESPACE_CACHE_DEPTH  96	/* Namespace objects */
+#define ACPI_MAX_COMMENT_CACHE_DEPTH    96	/* Comments for the -ca option */
 
 /*
  * Should the subsystem abort the loading of an ACPI table if the
@@ -112,19 +113,9 @@
  *
  *****************************************************************************/
 
-/*
- * Version of ACPI supported. This is a sad story. Windows reports a _REV of
- * 2 regardless of the spec version implemented. Some vendors are using _REV
- * as a way to distinguish between Windows and Linux, and are breaking systems
- * in the process. We can't guarantee that they'll call _OSI before checking
- * _REV, so hardcode this to 2 on x86 systems right now and leave it at the
- * appropriate spec value for everybody else.
- */
-#ifdef CONFIG_X86
-#define ACPI_CA_SUPPORT_LEVEL           2
-#else
+/* Version of ACPI supported */
+
 #define ACPI_CA_SUPPORT_LEVEL           5
-#endif
 
 /* Maximum count for a semaphore object */
 
@@ -153,6 +144,10 @@
 /* Address Range lists are per-space_id (Memory and I/O only) */
 
 #define ACPI_ADDRESS_RANGE_MAX          2
+
+/* Maximum number of While() loops before abort */
+
+#define ACPI_MAX_LOOP_COUNT             0x000FFFFF
 
 /******************************************************************************
  *

@@ -1,17 +1,21 @@
-linux-4.4.x-zenx
+linux-4.14.x-zen
 ====================
 
-Versione del geek kernel con le patch scelte da me
+** Italian **
 
-bfq bfs additional_cpu_optimizations uksm zen
+Versione LTS del linux-zen kernel (repository ufficiale https://github.com/zen-kernel/zen-kernel) con in più la patch additional_cpu_optimizations
 
 Se vuoi scaricare questo repo e rimanere aggiornato con tutte le modifiche digita su terminale:
 
-git clone https://github.com/loxdegio/linux-patched
+git clone https://github.com/loxdegio/linux-zen-lts
+
+** English **
+
+LTS version of linux-zen kernel (official repository https://github.com/zen-kernel/zen-kernel) adding additional_cpu_optimizations patch
 
 If you want to download and keep upgraded this repo type on terminal:
 
-git clone https://github.com/loxdegio/linux-patched
+git clone https://github.com/loxdegio/linux-zen-lts
 
 
 BUILD INSTRUCTIONS
@@ -31,4 +35,4 @@ BUILD INSTRUCTIONS
   EN: https://wiki.archlinux.org/index.php/Kernels/Compilation/Traditional
   IT: https://wiki.archlinux.org/index.php/Kernels/Compilation/Traditional_%28Italiano%29
 
-* If you have Gentoo you can download this kernel and apply patches by yourself from init6 overlay or build this with my choice patches ;)
+* If you have Gentoo you should know hot to compile a custom kernel ;)

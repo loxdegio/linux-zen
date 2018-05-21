@@ -8,7 +8,7 @@
 
 static inline int sradix_node_full(struct sradix_tree_root *root, struct sradix_tree_node *node)
 {
-	return node->fulls == root->stores_size || 
+	return node->fulls == root->stores_size ||
 		(node->height == 1 && node->count == root->stores_size);
 }
 
@@ -40,6 +40,7 @@ static int sradix_tree_extend(struct sradix_tree_root *root, unsigned long index
 
 	while (height > root->height) {
 		unsigned int newheight;
+
 		if (!(node = root->alloc()))
 			return -ENOMEM;
 
@@ -91,8 +92,8 @@ void *sradix_tree_next(struct sradix_tree_root *root,
 	}
 
 	while (node) {
-		offset = (index & root->mask) + 1;					
-		for (;offset < root->stores_size; offset++) {
+		offset = (index & root->mask) + 1;
+		for (; offset < root->stores_size; offset++) {
 			item = node->stores[offset];
 			if (item && (!iter || iter(item, node->height)))
 				break;
@@ -199,7 +200,7 @@ go_on:
 
 	store = &node->stores[offset];
 	for (i = 0, j = 0;
-	      j < root->stores_size - node->count && 
+	      j < root->stores_size - node->count &&
 	      i < root->stores_size - offset && j < num; i++) {
 		if (!store[i]) {
 			store[i] = item[j];
@@ -244,7 +245,7 @@ go_on:
 /**
  *	sradix_tree_shrink    -    shrink height of a sradix tree to minimal
  *      @root		sradix tree root
- *  
+ *
  */
 static inline void sradix_tree_shrink(struct sradix_tree_root *root)
 {
@@ -262,9 +263,8 @@ static inline void sradix_tree_shrink(struct sradix_tree_root *root)
 		root->rnode = to_free->stores[0];
 		root->rnode->parent = NULL;
 		root->height--;
-		if (unlikely(root->enter_node == to_free)) {
+		if (unlikely(root->enter_node == to_free))
 			root->enter_node = NULL;
-		}
 		root->free(to_free);
 	}
 }
@@ -272,7 +272,7 @@ static inline void sradix_tree_shrink(struct sradix_tree_root *root)
 /*
  * Del the item on the known leaf node and index
  */
-void sradix_tree_delete_from_leaf(struct sradix_tree_root *root, 
+void sradix_tree_delete_from_leaf(struct sradix_tree_root *root,
 				  struct sradix_tree_node *node, unsigned long index)
 {
 	unsigned int offset;
@@ -359,7 +359,7 @@ void *sradix_tree_lookup(struct sradix_tree_root *root, unsigned long index)
  * Return the item if it exists, otherwise create it in place
  * and return the created item.
  */
-void *sradix_tree_lookup_create(struct sradix_tree_root *root, 
+void *sradix_tree_lookup_create(struct sradix_tree_root *root,
 			unsigned long index, void *(*item_alloc)(void))
 {
 	unsigned int height, offset;

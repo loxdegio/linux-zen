@@ -116,7 +116,7 @@ int nx842_crypto_init(struct crypto_tfm *tfm, struct nx842_driver *driver)
 
 	spin_lock_init(&ctx->lock);
 	ctx->driver = driver;
-	ctx->wmem = kmalloc(driver->workmem_size, GFP_KERNEL);
+	ctx->wmem = kzalloc(driver->workmem_size, GFP_KERNEL);
 	ctx->sbounce = (u8 *)__get_free_pages(GFP_KERNEL, BOUNCE_BUFFER_ORDER);
 	ctx->dbounce = (u8 *)__get_free_pages(GFP_KERNEL, BOUNCE_BUFFER_ORDER);
 	if (!ctx->wmem || !ctx->sbounce || !ctx->dbounce) {
@@ -308,7 +308,7 @@ int nx842_crypto_compress(struct crypto_tfm *tfm,
 		h = !n && add_header ? hdrsize : 0;
 
 		if (ignore)
-			pr_warn("interal error, ignore is set %x\n", ignore);
+			pr_warn("internal error, ignore is set %x\n", ignore);
 
 		ret = compress(ctx, &p, &hdr->group[n], &c, &ignore, h);
 		if (ret)

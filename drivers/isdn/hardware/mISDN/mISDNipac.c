@@ -80,6 +80,7 @@ isac_ph_state_bh(struct dchannel *dch)
 		l1_event(dch->l1, HW_DEACT_CNF);
 		break;
 	case ISAC_IND_DR:
+	case ISAC_IND_DR6:
 		dch->state = 3;
 		l1_event(dch->l1, HW_DEACT_IND);
 		break;
@@ -112,7 +113,7 @@ isac_ph_state_bh(struct dchannel *dch)
 	pr_debug("%s: TE newstate %x\n", isac->name, dch->state);
 }
 
-void
+static void
 isac_empty_fifo(struct isac_hw *isac, int count)
 {
 	u8 *ptr;
@@ -363,8 +364,8 @@ afterMONR1:
 			WriteISAC(isac, ISAC_MOCR, isac->mocr);
 			if (isac->mon_txc && (isac->mon_txp >= isac->mon_txc)) {
 				if (isac->monitor)
-					ret = isac->monitor(isac->dch.hw,
-							    MONITOR_TX_0, NULL, 0);
+					isac->monitor(isac->dch.hw,
+						      MONITOR_TX_0, NULL, 0);
 			}
 			kfree(isac->mon_tx);
 			isac->mon_tx = NULL;
@@ -374,8 +375,8 @@ afterMONR1:
 		}
 		if (isac->mon_txc && (isac->mon_txp >= isac->mon_txc)) {
 			if (isac->monitor)
-				ret = isac->monitor(isac->dch.hw,
-						    MONITOR_TX_0, NULL, 0);
+				isac->monitor(isac->dch.hw,
+					      MONITOR_TX_0, NULL, 0);
 			kfree(isac->mon_tx);
 			isac->mon_tx = NULL;
 			isac->mon_txc = 0;
@@ -396,8 +397,8 @@ AfterMOX0:
 			WriteISAC(isac, ISAC_MOCR, isac->mocr);
 			if (isac->mon_txc && (isac->mon_txp >= isac->mon_txc)) {
 				if (isac->monitor)
-					ret = isac->monitor(isac->dch.hw,
-							    MONITOR_TX_1, NULL, 0);
+					isac->monitor(isac->dch.hw,
+						      MONITOR_TX_1, NULL, 0);
 			}
 			kfree(isac->mon_tx);
 			isac->mon_tx = NULL;
@@ -407,8 +408,8 @@ AfterMOX0:
 		}
 		if (isac->mon_txc && (isac->mon_txp >= isac->mon_txc)) {
 			if (isac->monitor)
-				ret = isac->monitor(isac->dch.hw,
-						    MONITOR_TX_1, NULL, 0);
+				isac->monitor(isac->dch.hw,
+					      MONITOR_TX_1, NULL, 0);
 			kfree(isac->mon_tx);
 			isac->mon_tx = NULL;
 			isac->mon_txc = 0;
@@ -660,6 +661,7 @@ isac_l1cmd(struct dchannel *dch, u32 cmd)
 		spin_lock_irqsave(isac->hwlock, flags);
 		if ((isac->state == ISAC_IND_EI) ||
 		    (isac->state == ISAC_IND_DR) ||
+		    (isac->state == ISAC_IND_DR6) ||
 		    (isac->state == ISAC_IND_RS))
 			ph_command(isac, ISAC_CMD_TIM);
 		else
@@ -794,9 +796,8 @@ isac_init(struct isac_hw *isac)
 	}
 	isac->mon_tx = NULL;
 	isac->mon_rx = NULL;
-	isac->dch.timer.function = (void *) dbusy_timer_handler;
-	isac->dch.timer.data = (long)isac;
-	init_timer(&isac->dch.timer);
+	setup_timer(&isac->dch.timer, (void *)dbusy_timer_handler,
+		    (long)isac);
 	isac->mocr = 0xaa;
 	if (isac->type & IPAC_TYPE_ISACX) {
 		/* Disable all IRQ */
@@ -1623,7 +1624,7 @@ mISDNipac_init(struct ipac_hw *ipac, void *hw)
 		ipac->hscx[i].bch.hw = hw;
 		ipac->hscx[i].ip = ipac;
 		/* default values for IOM time slots
-		 * can be overwriten by card */
+		 * can be overwritten by card */
 		ipac->hscx[i].slot = (i == 0) ? 0x2f : 0x03;
 	}
 

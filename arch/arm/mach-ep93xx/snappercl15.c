@@ -25,7 +25,7 @@
 #include <linux/fb.h>
 
 #include <linux/mtd/partitions.h>
-#include <linux/mtd/nand.h>
+#include <linux/mtd/rawnand.h>
 
 #include <mach/hardware.h>
 #include <linux/platform_data/video-ep93xx.h>
@@ -49,7 +49,7 @@
 static void snappercl15_nand_cmd_ctrl(struct mtd_info *mtd, int cmd,
 				      unsigned int ctrl)
 {
-	struct nand_chip *chip = mtd->priv;
+	struct nand_chip *chip = mtd_to_nand(mtd);
 	static u16 nand_state = SNAPPERCL15_NAND_WPN;
 	u16 set;
 
@@ -76,7 +76,7 @@ static void snappercl15_nand_cmd_ctrl(struct mtd_info *mtd, int cmd,
 
 static int snappercl15_nand_dev_ready(struct mtd_info *mtd)
 {
-	struct nand_chip *chip = mtd->priv;
+	struct nand_chip *chip = mtd_to_nand(mtd);
 
 	return !!(__raw_readw(NAND_CTRL_ADDR(chip)) & SNAPPERCL15_NAND_RDY);
 }

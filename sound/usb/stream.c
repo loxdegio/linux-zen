@@ -125,11 +125,9 @@ static int usb_chmap_ctl_info(struct snd_kcontrol *kcontrol,
 static bool have_dup_chmap(struct snd_usb_substream *subs,
 			   struct audioformat *fp)
 {
-	struct list_head *p;
+	struct audioformat *prev = fp;
 
-	for (p = fp->list.prev; p != &subs->fmt_list; p = p->prev) {
-		struct audioformat *prev;
-		prev = list_entry(p, struct audioformat, list);
+	list_for_each_entry_continue_reverse(prev, &subs->fmt_list, list) {
 		if (prev->chmap &&
 		    !memcmp(prev->chmap, fp->chmap, sizeof(*fp->chmap)))
 			return true;
@@ -660,10 +658,8 @@ int snd_usb_parse_audio_interface(struct snd_usb_audio *chip, int iface_no)
 			continue;
 
 		fp = kzalloc(sizeof(*fp), GFP_KERNEL);
-		if (! fp) {
-			dev_err(&dev->dev, "cannot malloc\n");
+		if (!fp)
 			return -ENOMEM;
-		}
 
 		fp->iface = iface_no;
 		fp->altsetting = altno;

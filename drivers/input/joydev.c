@@ -22,27 +22,20 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/mm.h>
-#include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/poll.h>
 #include <linux/init.h>
 #include <linux/device.h>
 #include <linux/cdev.h>
-#include <linux/module.h>
-#include <linux/moduleparam.h>
 
 MODULE_AUTHOR("Vojtech Pavlik <vojtech@ucw.cz>");
 MODULE_DESCRIPTION("Joystick device interfaces");
 MODULE_SUPPORTED_DEVICE("input/js");
 MODULE_LICENSE("GPL");
+
 #define JOYDEV_MINOR_BASE	0
 #define JOYDEV_MINORS		16
 #define JOYDEV_BUFFER_SIZE	64
-#define MAX_REMAP_SIZE          10
-
-static int remap_array[MAX_REMAP_SIZE];
-static int remap_count = 0;
-static int free_buttons[MAX_REMAP_SIZE];
 
 struct joydev {
 	int open;
@@ -77,9 +70,6 @@ struct joydev_client {
 	struct list_head node;
 };
 
-module_param_array(remap_array, int, &remap_count, 0 );
-MODULE_PARM_DESC( remap_array, "remap axis to buttons\n" );
-
 static int joydev_correct(int value, struct js_corr *corr)
 {
 	switch (corr->type) {
@@ -97,7 +87,7 @@ static int joydev_correct(int value, struct js_corr *corr)
 		return 0;
 	}
 
-	return value < -32767 ? -32767 : (value > 32767 ? 32767 : value);
+	return clamp(value, -32767, 32767);
 }
 
 static void joydev_pass_event(struct joydev_client *client,
@@ -130,17 +120,6 @@ static void joydev_event(struct input_handle *handle,
 	struct joydev *joydev = handle->private;
 	struct joydev_client *client;
 	struct js_event event;
-        int i;
-
-        if( remap_count > 0 && remap_count < MAX_REMAP_SIZE ){
-                for( i = 0; i < remap_count; i++ )
-                        if( code == remap_array[i] ){
-                                type = EV_KEY;
-                                code = free_buttons[i];
-                                if( value == 255 )
-                                        value = 1;
-                        }
-        }
 
 	switch (type) {
 
@@ -208,6 +187,17 @@ static void joydev_detach_client(struct joydev *joydev,
 	synchronize_rcu();
 }
 
+static void joydev_refresh_state(struct joydev *joydev)
+{
+	struct input_dev *dev = joydev->handle.dev;
+	int i, val;
+
+	for (i = 0; i < joydev->nabs; i++) {
+		val = input_abs_get_val(dev, joydev->abspam[i]);
+		joydev->abs[i] = joydev_correct(val, &joydev->corr[i]);
+	}
+}
+
 static int joydev_open_device(struct joydev *joydev)
 {
 	int retval;
@@ -222,6 +212,8 @@ static int joydev_open_device(struct joydev *joydev)
 		retval = input_open_device(&joydev->handle);
 		if (retval)
 			joydev->open--;
+		else
+			joydev_refresh_state(joydev);
 	}
 
 	mutex_unlock(&joydev->mutex);
@@ -750,11 +742,71 @@ static void joydev_cleanup(struct joydev *joydev)
 	joydev_mark_dead(joydev);
 	joydev_hangup(joydev);
 
-	cdev_del(&joydev->cdev);
-
 	/* joydev is marked dead so no one else accesses joydev->open */
 	if (joydev->open)
 		input_close_device(handle);
+}
+
+/*
+ * These codes are copied from from hid-ids.h, unfortunately there is no common
+ * usb_ids/bt_ids.h header.
+ */
+#define USB_VENDOR_ID_SONY			0x054c
+#define USB_DEVICE_ID_SONY_PS3_CONTROLLER		0x0268
+#define USB_DEVICE_ID_SONY_PS4_CONTROLLER		0x05c4
+#define USB_DEVICE_ID_SONY_PS4_CONTROLLER_2		0x09cc
+#define USB_DEVICE_ID_SONY_PS4_CONTROLLER_DONGLE	0x0ba0
+
+#define USB_VENDOR_ID_THQ			0x20d6
+#define USB_DEVICE_ID_THQ_PS3_UDRAW			0xcb17
+
+#define ACCEL_DEV(vnd, prd)						\
+	{								\
+		.flags = INPUT_DEVICE_ID_MATCH_VENDOR |			\
+				INPUT_DEVICE_ID_MATCH_PRODUCT |		\
+				INPUT_DEVICE_ID_MATCH_PROPBIT,		\
+		.vendor = (vnd),					\
+		.product = (prd),					\
+		.propbit = { BIT_MASK(INPUT_PROP_ACCELEROMETER) },	\
+	}
+
+static const struct input_device_id joydev_blacklist[] = {
+	/* Avoid touchpads and touchscreens */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+				INPUT_DEVICE_ID_MATCH_KEYBIT,
+		.evbit = { BIT_MASK(EV_KEY) },
+		.keybit = { [BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH) },
+	},
+	/* Avoid tablets, digitisers and similar devices */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+				INPUT_DEVICE_ID_MATCH_KEYBIT,
+		.evbit = { BIT_MASK(EV_KEY) },
+		.keybit = { [BIT_WORD(BTN_DIGI)] = BIT_MASK(BTN_DIGI) },
+	},
+	/* Disable accelerometers on composite devices */
+	ACCEL_DEV(USB_VENDOR_ID_SONY, USB_DEVICE_ID_SONY_PS3_CONTROLLER),
+	ACCEL_DEV(USB_VENDOR_ID_SONY, USB_DEVICE_ID_SONY_PS4_CONTROLLER),
+	ACCEL_DEV(USB_VENDOR_ID_SONY, USB_DEVICE_ID_SONY_PS4_CONTROLLER_2),
+	ACCEL_DEV(USB_VENDOR_ID_SONY, USB_DEVICE_ID_SONY_PS4_CONTROLLER_DONGLE),
+	ACCEL_DEV(USB_VENDOR_ID_THQ, USB_DEVICE_ID_THQ_PS3_UDRAW),
+	{ /* sentinel */ }
+};
+
+static bool joydev_dev_is_blacklisted(struct input_dev *dev)
+{
+	const struct input_device_id *id;
+
+	for (id = joydev_blacklist; id->flags; id++) {
+		if (input_match_device_id(dev, id)) {
+			dev_dbg(&dev->dev,
+				"joydev: blacklisting '%s'\n", dev->name);
+			return true;
+		}
+	}
+
+	return false;
 }
 
 static bool joydev_dev_is_absolute_mouse(struct input_dev *dev)
@@ -817,12 +869,8 @@ static bool joydev_dev_is_absolute_mouse(struct input_dev *dev)
 
 static bool joydev_match(struct input_handler *handler, struct input_dev *dev)
 {
-	/* Avoid touchpads and touchscreens */
-	if (test_bit(EV_KEY, dev->evbit) && test_bit(BTN_TOUCH, dev->keybit))
-		return false;
-
-	/* Avoid tablets, digitisers and similar devices */
-	if (test_bit(EV_KEY, dev->evbit) && test_bit(BTN_DIGI, dev->keybit))
+	/* Disable blacklisted devices */
+	if (joydev_dev_is_blacklisted(dev))
 		return false;
 
 	/* Avoid absolute mice */
@@ -836,7 +884,7 @@ static int joydev_connect(struct input_handler *handler, struct input_dev *dev,
 			  const struct input_device_id *id)
 {
 	struct joydev *joydev;
-	int i, j = 0, t, minor, dev_no;
+	int i, j, t, minor, dev_no;
 	int error;
 
 	minor = input_get_new_minor(JOYDEV_MINOR_BASE, JOYDEV_MINORS, true);
@@ -880,29 +928,19 @@ static int joydev_connect(struct input_handler *handler, struct input_dev *dev,
 			joydev->keymap[i] = joydev->nkey;
 			joydev->keypam[joydev->nkey] = i + BTN_MISC;
 			joydev->nkey++;
-                       j = i;
-                }
-        if( remap_count > 0 && remap_count < MAX_REMAP_SIZE ){
-                printk( "[joydev] axis remapping enabled\n" );
-                for( i = 0; i < remap_count; i++ ){
-                        joydev->keymap[j + i + 1] = joydev->nkey;
-                        joydev->keypam[joydev->nkey] = i + j + 1 + BTN_MISC;
-                        free_buttons[i] = j + i + 1 + BTN_MISC;
-                        joydev->nkey++;
-
 		}
+
 	for (i = 0; i < BTN_JOYSTICK - BTN_MISC; i++)
 		if (test_bit(i + BTN_MISC, dev->keybit)) {
 			joydev->keymap[i] = joydev->nkey;
 			joydev->keypam[joydev->nkey] = i + BTN_MISC;
 			joydev->nkey++;
 		}
-	}
+
 	for (i = 0; i < joydev->nabs; i++) {
 		j = joydev->abspam[i];
 		if (input_abs_get_max(dev, j) == input_abs_get_min(dev, j)) {
 			joydev->corr[i].type = JS_CORR_NONE;
-			joydev->abs[i] = input_abs_get_val(dev, j);
 			continue;
 		}
 		joydev->corr[i].type = JS_CORR_BROKEN;
@@ -917,10 +955,6 @@ static int joydev_connect(struct input_handler *handler, struct input_dev *dev,
 		if (t) {
 			joydev->corr[i].coef[2] = (1 << 29) / t;
 			joydev->corr[i].coef[3] = (1 << 29) / t;
-
-			joydev->abs[i] =
-				joydev_correct(input_abs_get_val(dev, j),
-					       joydev->corr + i);
 		}
 	}
 
@@ -935,12 +969,8 @@ static int joydev_connect(struct input_handler *handler, struct input_dev *dev,
 		goto err_free_joydev;
 
 	cdev_init(&joydev->cdev, &joydev_fops);
-	joydev->cdev.kobj.parent = &joydev->dev.kobj;
-	error = cdev_add(&joydev->cdev, joydev->dev.devt, 1);
-	if (error)
-		goto err_unregister_handle;
 
-	error = device_add(&joydev->dev);
+	error = cdev_device_add(&joydev->cdev, &joydev->dev);
 	if (error)
 		goto err_cleanup_joydev;
 
@@ -948,7 +978,6 @@ static int joydev_connect(struct input_handler *handler, struct input_dev *dev,
 
  err_cleanup_joydev:
 	joydev_cleanup(joydev);
- err_unregister_handle:
 	input_unregister_handle(&joydev->handle);
  err_free_joydev:
 	put_device(&joydev->dev);
@@ -961,7 +990,7 @@ static void joydev_disconnect(struct input_handle *handle)
 {
 	struct joydev *joydev = handle->private;
 
-	device_del(&joydev->dev);
+	cdev_device_del(&joydev->cdev, &joydev->dev);
 	joydev_cleanup(joydev);
 	input_free_minor(MINOR(joydev->dev.devt));
 	input_unregister_handle(handle);
@@ -974,6 +1003,12 @@ static const struct input_device_id joydev_ids[] = {
 				INPUT_DEVICE_ID_MATCH_ABSBIT,
 		.evbit = { BIT_MASK(EV_ABS) },
 		.absbit = { BIT_MASK(ABS_X) },
+	},
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+				INPUT_DEVICE_ID_MATCH_ABSBIT,
+		.evbit = { BIT_MASK(EV_ABS) },
+		.absbit = { BIT_MASK(ABS_Z) },
 	},
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |

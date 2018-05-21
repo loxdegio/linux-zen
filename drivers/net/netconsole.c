@@ -358,7 +358,7 @@ static ssize_t enabled_store(struct config_item *item,
 		if (err)
 			goto out_unlock;
 
-		pr_info("netconsole: network logging started\n");
+		pr_info("network logging started\n");
 	} else {	/* false */
 		/* We need to disable the netconsole before cleaning it up
 		 * otherwise we might end up in write_msg() with
@@ -829,7 +829,7 @@ static void send_ext_msg_udp(struct netconsole_target *nt, const char *msg,
 }
 
 static void write_ext_msg(struct console *con, const char *msg,
-			  unsigned int len, unsigned int loglevel)
+			  unsigned int len)
 {
 	struct netconsole_target *nt;
 	unsigned long flags;
@@ -844,8 +844,7 @@ static void write_ext_msg(struct console *con, const char *msg,
 	spin_unlock_irqrestore(&target_list_lock, flags);
 }
 
-static void write_msg(struct console *con, const char *msg, unsigned int len,
-                      unsigned int loglevel)
+static void write_msg(struct console *con, const char *msg, unsigned int len)
 {
 	int frag, left;
 	unsigned long flags;

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright 2008-2011 Freescale Semiconductor, Inc.
  */
@@ -35,8 +36,11 @@
 #include <crypto/md5.h>
 #include <crypto/internal/aead.h>
 #include <crypto/authenc.h>
+#include <crypto/akcipher.h>
 #include <crypto/scatterwalk.h>
 #include <crypto/internal/skcipher.h>
 #include <crypto/internal/hash.h>
+#include <crypto/internal/rsa.h>
+#include <crypto/internal/akcipher.h>
 
 #endif /* !defined(CAAM_COMPAT_H) */

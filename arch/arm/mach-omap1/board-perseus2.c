@@ -16,7 +16,7 @@
 #include <linux/platform_device.h>
 #include <linux/delay.h>
 #include <linux/mtd/mtd.h>
-#include <linux/mtd/nand.h>
+#include <linux/mtd/rawnand.h>
 #include <linux/mtd/partitions.h>
 #include <linux/mtd/physmap.h>
 #include <linux/input.h>
@@ -30,7 +30,7 @@
 
 #include <mach/tc.h>
 #include <mach/mux.h>
-#include <mach/flash.h>
+#include "flash.h"
 
 #include <mach/hardware.h>
 

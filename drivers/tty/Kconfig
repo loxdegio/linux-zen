@@ -75,111 +75,6 @@ config VT_CONSOLE_SLEEP
 	def_bool y
 	depends on VT_CONSOLE && PM_SLEEP
 
-menuconfig VT_CKO
-	bool "Colored kernel message output"
-	depends on VT_CONSOLE
-	---help---
-	  This option enables kernel messages to be emitted in
-	  colors other than the default.
-
-	  The color value you need to enter is composed (OR-ed)
-	  of a foreground and a background color.
-
-	  Foreground:
-	  0x00 = black,   0x08 = dark gray,
-	  0x01 = red,     0x09 = light red,
-	  0x02 = green,   0x0A = light green,
-	  0x03 = brown,   0x0B = yellow,
-	  0x04 = blue,    0x0C = light blue,
-	  0x05 = magenta, 0x0D = light magenta,
-	  0x06 = cyan,    0x0E = light cyan,
-	  0x07 = gray,    0x0F = white,
-
-	  (Foreground colors 0x08 to 0x0F do not work when a VGA
-	  console font with 512 glyphs is used.)
-
-	  Background:
-	  0x00 = black,   0x40 = blue,
-	  0x10 = red,     0x50 = magenta,
-	  0x20 = green,   0x60 = cyan,
-	  0x30 = brown,   0x70 = gray,
-
-	  For example, 0x1F would yield white on red.
-
-	  If unsure, say N.
-
-config VT_PRINTK_EMERG_COLOR
-	hex "Emergency messages color"
-	range 0x00 0xFF
-	depends on VT_CKO
-	default 0x07
-	---help---
-	  This option defines with which color kernel emergency messages will
-	  be printed to the console.
-
-config VT_PRINTK_ALERT_COLOR
-	hex "Alert messages color"
-	range 0x00 0xFF
-	depends on VT_CKO
-	default 0x07
-	---help---
-	  This option defines with which color kernel alert messages will
-	  be printed to the console.
-
-config VT_PRINTK_CRIT_COLOR
-	hex "Critical messages color"
-	range 0x00 0xFF
-	depends on VT_CKO
-	default 0x07
-	---help---
-	  This option defines with which color kernel critical messages will
-	  be printed to the console.
-
-config VT_PRINTK_ERR_COLOR
-	hex "Error messages color"
-	range 0x00 0xFF
-	depends on VT_CKO
-	default 0x07
-	---help---
-	  This option defines with which color kernel error messages will
-	  be printed to the console.
-
-config VT_PRINTK_WARNING_COLOR
-	hex "Warning messages color"
-	range 0x00 0xFF
-	depends on VT_CKO
-	default 0x07
-	---help---
-	  This option defines with which color kernel warning messages will
-	  be printed to the console.
-
-config VT_PRINTK_NOTICE_COLOR
-	hex "Notice messages color"
-	range 0x00 0xFF
-	depends on VT_CKO
-	default 0x07
-	---help---
-	  This option defines with which color kernel notice messages will
-	  be printed to the console.
-
-config VT_PRINTK_INFO_COLOR
-	hex "Information messages color"
-	range 0x00 0xFF
-	depends on VT_CKO
-	default 0x07
-	---help---
-	  This option defines with which color kernel information messages will
-	  be printed to the console.
-
-config VT_PRINTK_DEBUG_COLOR
-	hex "Debug messages color"
-	range 0x00 0xFF
-	depends on VT_CKO
-	default 0x07
-	---help---
-	  This option defines with which color kernel debug messages will
-	  be printed to the console.
-
 config NR_TTY_DEVICES
         int "Maximum tty device number"
         depends on VT
@@ -237,17 +132,6 @@ config UNIX98_PTYS
 
 	  All modern Linux systems use the Unix98 ptys.  Say Y unless
 	  you're on an embedded system and want to conserve memory.
-
-config DEVPTS_MULTIPLE_INSTANCES
-	bool "Support multiple instances of devpts"
-	depends on UNIX98_PTYS
-	default n
-	---help---
-	  Enable support for multiple instances of devpts filesystem.
-	  If you want to have isolated PTY namespaces (eg: in containers),
-	  say Y here.  Otherwise, say N. If enabled, each mount of devpts
-	  filesystem with the '-o newinstance' option will create an
-	  independent PTY namespace.
 
 config LEGACY_PTYS
 	bool "Legacy (BSD) PTY support"
@@ -344,7 +228,7 @@ config CYCLADES
 
 config CYZ_INTR
 	bool "Cyclades-Z interrupt mode operation"
-	depends on CYCLADES
+	depends on CYCLADES && PCI
 	help
 	  The Cyclades-Z family of multiport cards allows 2 (two) driver op
 	  modes: polling and interrupt. In polling mode, the driver will check
@@ -521,8 +405,15 @@ config PPC_EARLY_DEBUG_EHV_BC_HANDLE
 config GOLDFISH_TTY
 	tristate "Goldfish TTY Driver"
 	depends on GOLDFISH
+	select SERIAL_CORE
+	select SERIAL_CORE_CONSOLE
 	help
 	  Console and system TTY driver for the Goldfish virtual platform.
+
+config GOLDFISH_TTY_EARLY_CONSOLE
+	bool
+	default y if GOLDFISH_TTY=y
+	select SERIAL_EARLYCON
 
 config DA_TTY
 	bool "DA TTY"
@@ -584,4 +475,9 @@ config MIPS_EJTAG_FDC_KGDB_CHAN
 	help
 	  FDC channel number to use for KGDB.
 
+config VCC
+	tristate "Sun Virtual Console Concentrator"
+	depends on SUN_LDOMS
+	help
+	  Support for Sun logical domain consoles.
 endif # TTY

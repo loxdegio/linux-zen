@@ -197,7 +197,7 @@ static void highbank_set_em_messages(struct device *dev,
 
 	for (i = 0; i < SGPIO_PINS; i++) {
 		err = of_get_named_gpio(np, "calxeda,sgpio-gpio", i);
-		if (IS_ERR_VALUE(err))
+		if (err < 0)
 			return;
 
 		pdata->sgpio_gpio[i] = err;
@@ -556,10 +556,6 @@ static int ahci_highbank_probe(struct platform_device *pdev)
 		/* set enclosure management message type */
 		if (ap->flags & ATA_FLAG_EM)
 			ap->em_message_type = hpriv->em_msg_type;
-
-		rc = ahci_setup_port_privdata(ap);
-		if (rc)
-			goto err0;
 
 		/* disabled/not-implemented port */
 		if (!(hpriv->port_map & (1 << i)))

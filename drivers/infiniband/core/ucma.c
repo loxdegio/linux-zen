@@ -106,6 +106,7 @@ struct ucma_multicast {
 	int			events_reported;
 
 	u64			uid;
+	u8			join_state;
 	struct list_head	list;
 	struct sockaddr_storage	addr;
 };
@@ -131,7 +132,7 @@ static inline struct ucma_context *_ucma_find_context(int id,
 	ctx = idr_find(&ctx_idr, id);
 	if (!ctx)
 		ctx = ERR_PTR(-ENOENT);
-	else if (ctx->file != file)
+	else if (ctx->file != file || !ctx->cm_id)
 		ctx = ERR_PTR(-EINVAL);
 	return ctx;
 }
@@ -247,14 +248,15 @@ static void ucma_copy_conn_event(struct rdma_ucm_conn_param *dst,
 	dst->qp_num = src->qp_num;
 }
 
-static void ucma_copy_ud_event(struct rdma_ucm_ud_param *dst,
+static void ucma_copy_ud_event(struct ib_device *device,
+			       struct rdma_ucm_ud_param *dst,
 			       struct rdma_ud_param *src)
 {
 	if (src->private_data_len)
 		memcpy(dst->private_data, src->private_data,
 		       src->private_data_len);
 	dst->private_data_len = src->private_data_len;
-	ib_copy_ah_attr_to_user(&dst->ah_attr, &src->ah_attr);
+	ib_copy_ah_attr_to_user(device, &dst->ah_attr, &src->ah_attr);
 	dst->qp_num = src->qp_num;
 	dst->qkey = src->qkey;
 }
@@ -314,7 +316,7 @@ static void ucma_removal_event_handler(struct rdma_cm_id *cm_id)
 		}
 	}
 	if (!event_found)
-		printk(KERN_ERR "ucma_removal_event_handler: warning: connect request event wasn't found\n");
+		pr_err("ucma_removal_event_handler: warning: connect request event wasn't found\n");
 }
 
 static int ucma_event_handler(struct rdma_cm_id *cm_id,
@@ -334,7 +336,8 @@ static int ucma_event_handler(struct rdma_cm_id *cm_id,
 	uevent->resp.event = event->event;
 	uevent->resp.status = event->status;
 	if (cm_id->qp_type == IB_QPT_UD)
-		ucma_copy_ud_event(&uevent->resp.param.ud, &event->param.ud);
+		ucma_copy_ud_event(cm_id->device, &uevent->resp.param.ud,
+				   &event->param.ud);
 	else
 		ucma_copy_conn_event(&uevent->resp.param.conn,
 				     &event->param.conn);
@@ -453,6 +456,7 @@ static ssize_t ucma_create_id(struct ucma_file *file, const char __user *inbuf,
 	struct rdma_ucm_create_id cmd;
 	struct rdma_ucm_create_id_resp resp;
 	struct ucma_context *ctx;
+	struct rdma_cm_id *cm_id;
 	enum ib_qp_type qp_type;
 	int ret;
 
@@ -473,10 +477,10 @@ static ssize_t ucma_create_id(struct ucma_file *file, const char __user *inbuf,
 		return -ENOMEM;
 
 	ctx->uid = cmd.uid;
-	ctx->cm_id = rdma_create_id(current->nsproxy->net_ns,
-				    ucma_event_handler, ctx, cmd.ps, qp_type);
-	if (IS_ERR(ctx->cm_id)) {
-		ret = PTR_ERR(ctx->cm_id);
+	cm_id = rdma_create_id(current->nsproxy->net_ns,
+			       ucma_event_handler, ctx, cmd.ps, qp_type);
+	if (IS_ERR(cm_id)) {
+		ret = PTR_ERR(cm_id);
 		goto err1;
 	}
 
@@ -486,14 +490,19 @@ static ssize_t ucma_create_id(struct ucma_file *file, const char __user *inbuf,
 		ret = -EFAULT;
 		goto err2;
 	}
+
+	ctx->cm_id = cm_id;
 	return 0;
 
 err2:
-	rdma_destroy_id(ctx->cm_id);
+	rdma_destroy_id(cm_id);
 err1:
 	mutex_lock(&mut);
 	idr_remove(&ctx_idr, ctx->id);
 	mutex_unlock(&mut);
+	mutex_lock(&file->mut);
+	list_del(&ctx->list);
+	mutex_unlock(&file->mut);
 	kfree(ctx);
 	return ret;
 }
@@ -623,6 +632,9 @@ static ssize_t ucma_bind_ip(struct ucma_file *file, const char __user *inbuf,
 	if (copy_from_user(&cmd, inbuf, sizeof(cmd)))
 		return -EFAULT;
 
+	if (!rdma_addr_size_in6(&cmd.addr))
+		return -EINVAL;
+
 	ctx = ucma_get_ctx(file, cmd.id);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
@@ -636,22 +648,21 @@ static ssize_t ucma_bind(struct ucma_file *file, const char __user *inbuf,
 			 int in_len, int out_len)
 {
 	struct rdma_ucm_bind cmd;
-	struct sockaddr *addr;
 	struct ucma_context *ctx;
 	int ret;
 
 	if (copy_from_user(&cmd, inbuf, sizeof(cmd)))
 		return -EFAULT;
 
-	addr = (struct sockaddr *) &cmd.addr;
-	if (cmd.reserved || !cmd.addr_size || (cmd.addr_size != rdma_addr_size(addr)))
+	if (cmd.reserved || !cmd.addr_size ||
+	    cmd.addr_size != rdma_addr_size_kss(&cmd.addr))
 		return -EINVAL;
 
 	ctx = ucma_get_ctx(file, cmd.id);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 
-	ret = rdma_bind_addr(ctx->cm_id, addr);
+	ret = rdma_bind_addr(ctx->cm_id, (struct sockaddr *) &cmd.addr);
 	ucma_put_ctx(ctx);
 	return ret;
 }
@@ -667,13 +678,16 @@ static ssize_t ucma_resolve_ip(struct ucma_file *file,
 	if (copy_from_user(&cmd, inbuf, sizeof(cmd)))
 		return -EFAULT;
 
+	if ((cmd.src_addr.sin6_family && !rdma_addr_size_in6(&cmd.src_addr)) ||
+	    !rdma_addr_size_in6(&cmd.dst_addr))
+		return -EINVAL;
+
 	ctx = ucma_get_ctx(file, cmd.id);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 
 	ret = rdma_resolve_addr(ctx->cm_id, (struct sockaddr *) &cmd.src_addr,
-				(struct sockaddr *) &cmd.dst_addr,
-				cmd.timeout_ms);
+				(struct sockaddr *) &cmd.dst_addr, cmd.timeout_ms);
 	ucma_put_ctx(ctx);
 	return ret;
 }
@@ -683,24 +697,23 @@ static ssize_t ucma_resolve_addr(struct ucma_file *file,
 				 int in_len, int out_len)
 {
 	struct rdma_ucm_resolve_addr cmd;
-	struct sockaddr *src, *dst;
 	struct ucma_context *ctx;
 	int ret;
 
 	if (copy_from_user(&cmd, inbuf, sizeof(cmd)))
 		return -EFAULT;
 
-	src = (struct sockaddr *) &cmd.src_addr;
-	dst = (struct sockaddr *) &cmd.dst_addr;
-	if (cmd.reserved || (cmd.src_size && (cmd.src_size != rdma_addr_size(src))) ||
-	    !cmd.dst_size || (cmd.dst_size != rdma_addr_size(dst)))
+	if (cmd.reserved ||
+	    (cmd.src_size && (cmd.src_size != rdma_addr_size_kss(&cmd.src_addr))) ||
+	    !cmd.dst_size || (cmd.dst_size != rdma_addr_size_kss(&cmd.dst_addr)))
 		return -EINVAL;
 
 	ctx = ucma_get_ctx(file, cmd.id);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 
-	ret = rdma_resolve_addr(ctx->cm_id, src, dst, cmd.timeout_ms);
+	ret = rdma_resolve_addr(ctx->cm_id, (struct sockaddr *) &cmd.src_addr,
+				(struct sockaddr *) &cmd.dst_addr, cmd.timeout_ms);
 	ucma_put_ctx(ctx);
 	return ret;
 }
@@ -897,11 +910,19 @@ static ssize_t ucma_query_path(struct ucma_context *ctx,
 	for (i = 0, out_len -= sizeof(*resp);
 	     i < resp->num_paths && out_len > sizeof(struct ib_path_rec_data);
 	     i++, out_len -= sizeof(struct ib_path_rec_data)) {
+		struct sa_path_rec *rec = &ctx->cm_id->route.path_rec[i];
 
 		resp->path_data[i].flags = IB_PATH_GMP | IB_PATH_PRIMARY |
 					   IB_PATH_BIDIRECTIONAL;
-		ib_sa_pack_path(&ctx->cm_id->route.path_rec[i],
-				&resp->path_data[i].path_rec);
+		if (rec->rec_type == SA_PATH_REC_TYPE_OPA) {
+			struct sa_path_rec ib;
+
+			sa_convert_path_opa_to_ib(&ib, rec);
+			ib_sa_pack_path(&ib, &resp->path_data[i].path_rec);
+
+		} else {
+			ib_sa_pack_path(rec, &resp->path_data[i].path_rec);
+		}
 	}
 
 	if (copy_to_user(response, resp,
@@ -1138,9 +1159,17 @@ static ssize_t ucma_init_qp_attr(struct ucma_file *file,
 	if (copy_from_user(&cmd, inbuf, sizeof(cmd)))
 		return -EFAULT;
 
+	if (cmd.qp_state > IB_QPS_ERR)
+		return -EINVAL;
+
 	ctx = ucma_get_ctx(file, cmd.id);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
+
+	if (!ctx->cm_id->device) {
+		ret = -EINVAL;
+		goto out;
+	}
 
 	resp.qp_attr_mask = 0;
 	memset(&qp_attr, 0, sizeof qp_attr);
@@ -1149,7 +1178,7 @@ static ssize_t ucma_init_qp_attr(struct ucma_file *file,
 	if (ret)
 		goto out;
 
-	ib_copy_qp_attr_to_user(&resp, &qp_attr);
+	ib_copy_qp_attr_to_user(ctx->cm_id->device, &resp, &qp_attr);
 	if (copy_to_user((void __user *)(unsigned long)cmd.response,
 			 &resp, sizeof(resp)))
 		ret = -EFAULT;
@@ -1196,7 +1225,7 @@ static int ucma_set_option_id(struct ucma_context *ctx, int optname,
 static int ucma_set_ib_path(struct ucma_context *ctx,
 			    struct ib_path_rec_data *path_data, size_t optlen)
 {
-	struct ib_sa_path_rec sa_path;
+	struct sa_path_rec sa_path;
 	struct rdma_cm_event event;
 	int ret;
 
@@ -1212,10 +1241,22 @@ static int ucma_set_ib_path(struct ucma_context *ctx,
 	if (!optlen)
 		return -EINVAL;
 
+	if (!ctx->cm_id->device)
+		return -EINVAL;
+
 	memset(&sa_path, 0, sizeof(sa_path));
 
+	sa_path.rec_type = SA_PATH_REC_TYPE_IB;
 	ib_sa_unpack_path(path_data->path_rec, &sa_path);
-	ret = rdma_set_ib_paths(ctx->cm_id, &sa_path, 1);
+
+	if (rdma_cap_opa_ah(ctx->cm_id->device, ctx->cm_id->port_num)) {
+		struct sa_path_rec opa;
+
+		sa_convert_path_ib_to_opa(&opa, &sa_path);
+		ret = rdma_set_ib_paths(ctx->cm_id, &opa, 1);
+	} else {
+		ret = rdma_set_ib_paths(ctx->cm_id, &sa_path, 1);
+	}
 	if (ret)
 		return ret;
 
@@ -1274,6 +1315,9 @@ static ssize_t ucma_set_option(struct ucma_file *file, const char __user *inbuf,
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 
+	if (unlikely(cmd.optval > KMALLOC_MAX_SIZE))
+		return -EINVAL;
+
 	optval = memdup_user((void __user *) (unsigned long) cmd.optval,
 			     cmd.optlen);
 	if (IS_ERR(optval)) {
@@ -1295,7 +1339,7 @@ static ssize_t ucma_notify(struct ucma_file *file, const char __user *inbuf,
 {
 	struct rdma_ucm_notify cmd;
 	struct ucma_context *ctx;
-	int ret;
+	int ret = -EINVAL;
 
 	if (copy_from_user(&cmd, inbuf, sizeof(cmd)))
 		return -EFAULT;
@@ -1304,7 +1348,9 @@ static ssize_t ucma_notify(struct ucma_file *file, const char __user *inbuf,
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 
-	ret = rdma_notify(ctx->cm_id, (enum ib_event_type) cmd.event);
+	if (ctx->cm_id->device)
+		ret = rdma_notify(ctx->cm_id, (enum ib_event_type)cmd.event);
+
 	ucma_put_ctx(ctx);
 	return ret;
 }
@@ -1317,12 +1363,20 @@ static ssize_t ucma_process_join(struct ucma_file *file,
 	struct ucma_multicast *mc;
 	struct sockaddr *addr;
 	int ret;
+	u8 join_state;
 
 	if (out_len < sizeof(resp))
 		return -ENOSPC;
 
 	addr = (struct sockaddr *) &cmd->addr;
-	if (cmd->reserved || !cmd->addr_size || (cmd->addr_size != rdma_addr_size(addr)))
+	if (cmd->addr_size != rdma_addr_size(addr))
+		return -EINVAL;
+
+	if (cmd->join_flags == RDMA_MC_JOIN_FLAG_FULLMEMBER)
+		join_state = BIT(FULLMEMBER_JOIN);
+	else if (cmd->join_flags == RDMA_MC_JOIN_FLAG_SENDONLY_FULLMEMBER)
+		join_state = BIT(SENDONLY_FULLMEMBER_JOIN);
+	else
 		return -EINVAL;
 
 	ctx = ucma_get_ctx(file, cmd->id);
@@ -1335,10 +1389,11 @@ static ssize_t ucma_process_join(struct ucma_file *file,
 		ret = -ENOMEM;
 		goto err1;
 	}
-
+	mc->join_state = join_state;
 	mc->uid = cmd->uid;
 	memcpy(&mc->addr, addr, cmd->addr_size);
-	ret = rdma_join_multicast(ctx->cm_id, (struct sockaddr *) &mc->addr, mc);
+	ret = rdma_join_multicast(ctx->cm_id, (struct sockaddr *)&mc->addr,
+				  join_state, mc);
 	if (ret)
 		goto err2;
 
@@ -1381,8 +1436,11 @@ static ssize_t ucma_join_ip_multicast(struct ucma_file *file,
 	join_cmd.response = cmd.response;
 	join_cmd.uid = cmd.uid;
 	join_cmd.id = cmd.id;
-	join_cmd.addr_size = rdma_addr_size((struct sockaddr *) &cmd.addr);
-	join_cmd.reserved = 0;
+	join_cmd.addr_size = rdma_addr_size_in6(&cmd.addr);
+	if (!join_cmd.addr_size)
+		return -EINVAL;
+
+	join_cmd.join_flags = RDMA_MC_JOIN_FLAG_FULLMEMBER;
 	memcpy(&join_cmd.addr, &cmd.addr, join_cmd.addr_size);
 
 	return ucma_process_join(file, &join_cmd, out_len);
@@ -1396,6 +1454,9 @@ static ssize_t ucma_join_multicast(struct ucma_file *file,
 
 	if (copy_from_user(&cmd, inbuf, sizeof(cmd)))
 		return -EFAULT;
+
+	if (!rdma_addr_size_kss(&cmd.addr))
+		return -EINVAL;
 
 	return ucma_process_join(file, &cmd, out_len);
 }
@@ -1574,8 +1635,11 @@ static ssize_t ucma_write(struct file *filp, const char __user *buf,
 	struct rdma_ucm_cmd_hdr hdr;
 	ssize_t ret;
 
-	if (WARN_ON_ONCE(!ib_safe_file_access(filp)))
+	if (!ib_safe_file_access(filp)) {
+		pr_err_once("ucma_write: process %d (%s) changed security contexts after opening file descriptor, this is not allowed.\n",
+			    task_tgid_vnr(current), current->comm);
 		return -EACCES;
+	}
 
 	if (len < sizeof(hdr))
 		return -EINVAL;
@@ -1628,7 +1692,8 @@ static int ucma_open(struct inode *inode, struct file *filp)
 	if (!file)
 		return -ENOMEM;
 
-	file->close_wq = create_singlethread_workqueue("ucma_close_id");
+	file->close_wq = alloc_ordered_workqueue("ucma_close_id",
+						 WQ_MEM_RECLAIM);
 	if (!file->close_wq) {
 		kfree(file);
 		return -ENOMEM;
@@ -1719,13 +1784,13 @@ static int __init ucma_init(void)
 
 	ret = device_create_file(ucma_misc.this_device, &dev_attr_abi_version);
 	if (ret) {
-		printk(KERN_ERR "rdma_ucm: couldn't create abi_version attr\n");
+		pr_err("rdma_ucm: couldn't create abi_version attr\n");
 		goto err1;
 	}
 
 	ucma_ctl_table_hdr = register_net_sysctl(&init_net, "net/rdma_ucm", ucma_ctl_table);
 	if (!ucma_ctl_table_hdr) {
-		printk(KERN_ERR "rdma_ucm: couldn't register sysctl paths\n");
+		pr_err("rdma_ucm: couldn't register sysctl paths\n");
 		ret = -ENOMEM;
 		goto err2;
 	}

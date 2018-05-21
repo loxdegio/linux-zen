@@ -1,5 +1,6 @@
-#ifndef _SCHED_PRIO_H
-#define _SCHED_PRIO_H
+/* SPDX-License-Identifier: GPL-2.0 */
+#ifndef _LINUX_SCHED_PRIO_H
+#define _LINUX_SCHED_PRIO_H
 
 #define MAX_NICE	19
 #define MIN_NICE	-20
@@ -20,7 +21,7 @@
 
 #define MAX_USER_RT_PRIO	100
 
-#ifdef CONFIG_SCHED_BFS
+#ifdef CONFIG_SCHED_MUQSS
 /* Note different MAX_RT_PRIO */
 #define MAX_RT_PRIO		(MAX_USER_RT_PRIO + 1)
 
@@ -28,10 +29,10 @@
 #define NORMAL_PRIO		(MAX_RT_PRIO + 1)
 #define IDLE_PRIO		(MAX_RT_PRIO + 2)
 #define PRIO_LIMIT		((IDLE_PRIO) + 1)
-#else /* CONFIG_SCHED_BFS */
+#else /* CONFIG_SCHED_MUQSS */
 #define MAX_RT_PRIO		MAX_USER_RT_PRIO
 
-#endif /* CONFIG_SCHED_BFS */
+#endif /* CONFIG_SCHED_MUQSS */
 
 #define MAX_PRIO		(MAX_RT_PRIO + NICE_WIDTH)
 #define DEFAULT_PRIO		(MAX_RT_PRIO + NICE_WIDTH / 2)
@@ -69,4 +70,4 @@ static inline long rlimit_to_nice(long prio)
 	return (MAX_NICE - prio + 1);
 }
 
-#endif /* _SCHED_PRIO_H */
+#endif /* _LINUX_SCHED_PRIO_H */

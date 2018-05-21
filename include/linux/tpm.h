@@ -33,7 +33,12 @@ struct tpm_chip;
 struct trusted_key_payload;
 struct trusted_key_options;
 
+enum TPM_OPS_FLAGS {
+	TPM_OPS_AUTO_STARTUP = BIT(0),
+};
+
 struct tpm_class_ops {
+	unsigned int flags;
 	const u8 req_complete_mask;
 	const u8 req_complete_val;
 	bool (*req_canceled)(struct tpm_chip *chip, u8 status);
@@ -43,7 +48,9 @@ struct tpm_class_ops {
 	u8 (*status) (struct tpm_chip *chip);
 	bool (*update_timeouts)(struct tpm_chip *chip,
 				unsigned long *timeout_cap);
-
+	int (*request_locality)(struct tpm_chip *chip, int loc);
+	int (*relinquish_locality)(struct tpm_chip *chip, int loc);
+	void (*clk_enable)(struct tpm_chip *chip, bool value);
 };
 
 #if defined(CONFIG_TCG_TPM) || defined(CONFIG_TCG_TPM_MODULE)

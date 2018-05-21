@@ -43,7 +43,6 @@
 #include "usbatm.h"
 
 #define DRIVER_AUTHOR	"Roman Kagan, David Woodhouse, Duncan Sands, Simon Arlott"
-#define DRIVER_VERSION	"0.4"
 #define DRIVER_DESC	"Conexant AccessRunner ADSL USB modem driver"
 
 static const char cxacru_driver_name[] = "cxacru";
@@ -474,7 +473,9 @@ static ssize_t cxacru_sysfs_store_adsl_config(struct device *dev,
 		ret = sscanf(buf + pos, "%x=%x%n", &index, &value, &tmp);
 		if (ret < 2)
 			return -EINVAL;
-		if (index < 0 || index > 0x7f)
+		if (index > 0x7f)
+			return -EINVAL;
+		if (tmp < 0 || tmp > len - pos)
 			return -EINVAL;
 		pos += tmp;
 
@@ -1137,10 +1138,8 @@ static int cxacru_bind(struct usbatm_data *usbatm_instance,
 
 	/* instance init */
 	instance = kzalloc(sizeof(*instance), GFP_KERNEL);
-	if (!instance) {
-		usb_dbg(usbatm_instance, "cxacru_bind: no memory for instance data\n");
+	if (!instance)
 		return -ENOMEM;
-	}
 
 	instance->usbatm = usbatm_instance;
 	instance->modem_type = (struct cxacru_modem_type *) id->driver_info;
@@ -1166,13 +1165,11 @@ static int cxacru_bind(struct usbatm_data *usbatm_instance,
 	}
 	instance->rcv_urb = usb_alloc_urb(0, GFP_KERNEL);
 	if (!instance->rcv_urb) {
-		usb_dbg(usbatm_instance, "cxacru_bind: no memory for rcv_urb\n");
 		ret = -ENOMEM;
 		goto fail;
 	}
 	instance->snd_urb = usb_alloc_urb(0, GFP_KERNEL);
 	if (!instance->snd_urb) {
-		usb_dbg(usbatm_instance, "cxacru_bind: no memory for snd_urb\n");
 		ret = -ENOMEM;
 		goto fail;
 	}
@@ -1382,4 +1379,3 @@ module_usb_driver(cxacru_usb_driver);
 MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
-MODULE_VERSION(DRIVER_VERSION);

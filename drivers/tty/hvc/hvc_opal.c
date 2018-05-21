@@ -179,8 +179,8 @@ static int hvc_opal_probe(struct platform_device *dev)
 		proto = HV_PROTOCOL_HVSI;
 		ops = &hvc_opal_hvsi_ops;
 	} else {
-		pr_err("hvc_opal: Unknown protocol for %s\n",
-		       dev->dev.of_node->full_name);
+		pr_err("hvc_opal: Unknown protocol for %pOF\n",
+		       dev->dev.of_node);
 		return -ENXIO;
 	}
 
@@ -204,26 +204,35 @@ static int hvc_opal_probe(struct platform_device *dev)
 		/* Instanciate now to establish a mapping index==vtermno */
 		hvc_instantiate(termno, termno, ops);
 	} else {
-		pr_err("hvc_opal: Device %s has duplicate terminal number #%d\n",
-		       dev->dev.of_node->full_name, termno);
+		pr_err("hvc_opal: Device %pOF has duplicate terminal number #%d\n",
+		       dev->dev.of_node, termno);
 		return -ENXIO;
 	}
 
-	pr_info("hvc%d: %s protocol on %s%s\n", termno,
+	pr_info("hvc%d: %s protocol on %pOF%s\n", termno,
 		proto == HV_PROTOCOL_RAW ? "raw" : "hvsi",
-		dev->dev.of_node->full_name,
+		dev->dev.of_node,
 		boot ? " (boot console)" : "");
 
-	irq = opal_event_request(ilog2(OPAL_EVENT_CONSOLE_INPUT));
+	irq = irq_of_parse_and_map(dev->dev.of_node, 0);
 	if (!irq) {
-		pr_err("hvc_opal: Unable to map interrupt for device %s\n",
-			dev->dev.of_node->full_name);
+		pr_info("hvc%d: No interrupts property, using OPAL event\n",
+				termno);
+		irq = opal_event_request(ilog2(OPAL_EVENT_CONSOLE_INPUT));
+	}
+
+	if (!irq) {
+		pr_err("hvc_opal: Unable to map interrupt for device %pOF\n",
+			dev->dev.of_node);
 		return irq;
 	}
 
 	hp = hvc_alloc(termno, irq, ops, MAX_VIO_PUT_CHARS);
 	if (IS_ERR(hp))
 		return PTR_ERR(hp);
+
+	/* hvc consoles on powernv may need to share a single irq */
+	hp->flags = IRQF_SHARED;
 	dev_set_drvdata(&dev->dev, hp);
 
 	return 0;

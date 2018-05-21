@@ -29,6 +29,7 @@ struct apic_chip_data {
 };
 
 struct irq_domain *x86_vector_domain;
+EXPORT_SYMBOL_GPL(x86_vector_domain);
 static DEFINE_RAW_SPINLOCK(vector_lock);
 static cpumask_var_t vector_cpumask, vector_searchmask, searched_cpumask;
 static struct irq_chip lapic_controller;
@@ -66,6 +67,7 @@ struct irq_cfg *irqd_cfg(struct irq_data *irq_data)
 
 	return data ? &data->cfg : NULL;
 }
+EXPORT_SYMBOL_GPL(irqd_cfg);
 
 struct irq_cfg *irq_cfg(unsigned int irq)
 {
@@ -101,7 +103,8 @@ static void free_apic_chip_data(struct apic_chip_data *data)
 }
 
 static int __assign_irq_vector(int irq, struct apic_chip_data *d,
-			       const struct cpumask *mask)
+			       const struct cpumask *mask,
+			       struct irq_data *irqdata)
 {
 	/*
 	 * NOTE! The local APIC isn't very good at handling
@@ -139,7 +142,7 @@ static int __assign_irq_vector(int irq, struct apic_chip_data *d,
 		/*
 		 * Clear the offline cpus from @vector_cpumask for searching
 		 * and verify whether the result overlaps with @mask. If true,
-		 * then the call to apic->cpu_mask_to_apicid_and() will
+		 * then the call to apic->cpu_mask_to_apicid() will
 		 * succeed as well. If not, no point in trying to find a
 		 * vector in this mask.
 		 */
@@ -163,7 +166,7 @@ static int __assign_irq_vector(int irq, struct apic_chip_data *d,
 		offset = current_offset;
 next:
 		vector += 16;
-		if (vector >= first_system_vector) {
+		if (vector >= FIRST_SYSTEM_VECTOR) {
 			offset = (offset + 1) % 16;
 			vector = FIRST_EXTERNAL_VECTOR + offset;
 		}
@@ -219,34 +222,40 @@ success:
 	 * Cache destination APIC IDs into cfg->dest_apicid. This cannot fail
 	 * as we already established, that mask & d->domain & cpu_online_mask
 	 * is not empty.
+	 *
+	 * vector_searchmask is a subset of d->domain and has the offline
+	 * cpus masked out.
 	 */
-	BUG_ON(apic->cpu_mask_to_apicid_and(mask, d->domain,
-					    &d->cfg.dest_apicid));
+	cpumask_and(vector_searchmask, vector_searchmask, mask);
+	BUG_ON(apic->cpu_mask_to_apicid(vector_searchmask, irqdata,
+					&d->cfg.dest_apicid));
 	return 0;
 }
 
 static int assign_irq_vector(int irq, struct apic_chip_data *data,
-			     const struct cpumask *mask)
+			     const struct cpumask *mask,
+			     struct irq_data *irqdata)
 {
 	int err;
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&vector_lock, flags);
-	err = __assign_irq_vector(irq, data, mask);
+	err = __assign_irq_vector(irq, data, mask, irqdata);
 	raw_spin_unlock_irqrestore(&vector_lock, flags);
 	return err;
 }
 
 static int assign_irq_vector_policy(int irq, int node,
 				    struct apic_chip_data *data,
-				    struct irq_alloc_info *info)
+				    struct irq_alloc_info *info,
+				    struct irq_data *irqdata)
 {
 	if (info && info->mask)
-		return assign_irq_vector(irq, data, info->mask);
+		return assign_irq_vector(irq, data, info->mask, irqdata);
 	if (node != NUMA_NO_NODE &&
-	    assign_irq_vector(irq, data, cpumask_of_node(node)) == 0)
+	    assign_irq_vector(irq, data, cpumask_of_node(node), irqdata) == 0)
 		return 0;
-	return assign_irq_vector(irq, data, apic->target_cpus());
+	return assign_irq_vector(irq, data, apic->target_cpus(), irqdata);
 }
 
 static void clear_irq_vector(int irq, struct apic_chip_data *data)
@@ -358,15 +367,26 @@ static int x86_vector_alloc_irqs(struct irq_domain *domain, unsigned int virq,
 		irq_data->chip = &lapic_controller;
 		irq_data->chip_data = data;
 		irq_data->hwirq = virq + i;
-		err = assign_irq_vector_policy(virq + i, node, data, info);
-		if (err)
+		err = assign_irq_vector_policy(virq + i, node, data, info,
+					       irq_data);
+		if (err) {
+			irq_data->chip_data = NULL;
+			free_apic_chip_data(data);
 			goto error;
+		}
+		/*
+		 * If the apic destination mode is physical, then the
+		 * effective affinity is restricted to a single target
+		 * CPU. Mark the interrupt accordingly.
+		 */
+		if (!apic->irq_dest_mode)
+			irqd_set_single_target(irq_data);
 	}
 
 	return 0;
 
 error:
-	x86_vector_free_irqs(domain, virq, i + 1);
+	x86_vector_free_irqs(domain, virq, i);
 	return err;
 }
 
@@ -403,7 +423,7 @@ int __init arch_probe_nr_irqs(void)
 }
 
 #ifdef	CONFIG_X86_IO_APIC
-static void init_legacy_irqs(void)
+static void __init init_legacy_irqs(void)
 {
 	int i, node = cpu_to_node(0);
 	struct apic_chip_data *data;
@@ -422,16 +442,21 @@ static void init_legacy_irqs(void)
 	}
 }
 #else
-static void init_legacy_irqs(void) { }
+static inline void init_legacy_irqs(void) { }
 #endif
 
 int __init arch_early_irq_init(void)
 {
+	struct fwnode_handle *fn;
+
 	init_legacy_irqs();
 
-	x86_vector_domain = irq_domain_add_tree(NULL, &x86_vector_domain_ops,
-						NULL);
+	fn = irq_domain_alloc_named_fwnode("VECTOR");
+	BUG_ON(!fn);
+	x86_vector_domain = irq_domain_create_tree(fn, &x86_vector_domain_ops,
+						   NULL);
 	BUG_ON(x86_vector_domain == NULL);
+	irq_domain_free_fwnode(fn);
 	irq_set_default_host(x86_vector_domain);
 
 	arch_init_msi_domain(x86_vector_domain);
@@ -521,17 +546,18 @@ static int apic_set_affinity(struct irq_data *irq_data,
 	struct apic_chip_data *data = irq_data->chip_data;
 	int err, irq = irq_data->irq;
 
-	if (!config_enabled(CONFIG_SMP))
+	if (!IS_ENABLED(CONFIG_SMP))
 		return -EPERM;
 
 	if (!cpumask_intersects(dest, cpu_online_mask))
 		return -EINVAL;
 
-	err = assign_irq_vector(irq, data, dest);
+	err = assign_irq_vector(irq, data, dest, irq_data);
 	return err ? err : IRQ_SET_MASK_OK;
 }
 
 static struct irq_chip lapic_controller = {
+	.name			= "APIC",
 	.irq_ack		= apic_ack_edge,
 	.irq_set_affinity	= apic_set_affinity,
 	.irq_retrigger		= apic_retrigger_irq,
@@ -557,7 +583,7 @@ void send_cleanup_vector(struct irq_cfg *cfg)
 		__send_cleanup_vector(data);
 }
 
-asmlinkage __visible void smp_irq_move_cleanup_interrupt(void)
+asmlinkage __visible void __irq_entry smp_irq_move_cleanup_interrupt(void)
 {
 	unsigned vector, me;
 
@@ -659,10 +685,27 @@ void irq_complete_move(struct irq_cfg *cfg)
  */
 void irq_force_complete_move(struct irq_desc *desc)
 {
-	struct irq_data *irqdata = irq_desc_get_irq_data(desc);
-	struct apic_chip_data *data = apic_chip_data(irqdata);
-	struct irq_cfg *cfg = data ? &data->cfg : NULL;
+	struct irq_data *irqdata;
+	struct apic_chip_data *data;
+	struct irq_cfg *cfg;
 	unsigned int cpu;
+
+	/*
+	 * The function is called for all descriptors regardless of which
+	 * irqdomain they belong to. For example if an IRQ is provided by
+	 * an irq_chip as part of a GPIO driver, the chip data for that
+	 * descriptor is specific to the irq_chip in question.
+	 *
+	 * Check first that the chip_data is what we expect
+	 * (apic_chip_data) before touching it any further.
+	 */
+	irqdata = irq_domain_get_irq_data(x86_vector_domain,
+					  irq_desc_get_irq(desc));
+	if (!irqdata)
+		return;
+
+	data = apic_chip_data(irqdata);
+	cfg = data ? &data->cfg : NULL;
 
 	if (!cfg)
 		return;
@@ -942,7 +985,7 @@ static int __init print_ICs(void)
 	print_PIC();
 
 	/* don't print out if apic is not there */
-	if (!cpu_has_apic && !apic_from_smp_config())
+	if (!boot_cpu_has(X86_FEATURE_APIC) && !apic_from_smp_config())
 		return 0;
 
 	print_local_APICs(show_lapic);

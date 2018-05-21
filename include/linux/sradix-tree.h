@@ -17,19 +17,19 @@ do {									\
 
 struct sradix_tree_node {
 	unsigned int	height;		/* Height from the bottom */
-	unsigned int	count;		
-	unsigned int	fulls;		/* Number of full sublevel trees */ 
+	unsigned int	count;
+	unsigned int	fulls;		/* Number of full sublevel trees */
 	struct sradix_tree_node *parent;
 	void *stores[0];
 };
 
 /* A simple radix tree implementation */
 struct sradix_tree_root {
-        unsigned int            height;
-        struct sradix_tree_node *rnode;
+	unsigned int            height;
+	struct sradix_tree_node *rnode;
 
 	/* Where found to have available empty stores in its sublevels */
-        struct sradix_tree_node *enter_node;
+	struct sradix_tree_node *enter_node;
 	unsigned int shift;
 	unsigned int stores_size;
 	unsigned int mask;
@@ -38,13 +38,13 @@ struct sradix_tree_root {
 	//unsigned long *height_to_maxindex;
 
 	/* How the node is allocated and freed. */
-	struct sradix_tree_node *(*alloc)(void); 
+	struct sradix_tree_node *(*alloc)(void);
 	void (*free)(struct sradix_tree_node *node);
 
 	/* When a new node is added and removed */
 	void (*extend)(struct sradix_tree_node *parent, struct sradix_tree_node *child);
-	void (*assign)(struct sradix_tree_node *node, unsigned index, void *item);
-	void (*rm)(struct sradix_tree_node *node, unsigned offset);
+	void (*assign)(struct sradix_tree_node *node, unsigned int index, void *item);
+	void (*rm)(struct sradix_tree_node *node, unsigned int offset);
 };
 
 struct sradix_tree_path {
@@ -52,7 +52,7 @@ struct sradix_tree_path {
 	int offset;
 };
 
-static inline 
+static inline
 void init_sradix_tree_root(struct sradix_tree_root *root, unsigned long shift)
 {
 	root->height = 0;
@@ -69,7 +69,7 @@ extern void *sradix_tree_next(struct sradix_tree_root *root,
 
 extern int sradix_tree_enter(struct sradix_tree_root *root, void **item, int num);
 
-extern void sradix_tree_delete_from_leaf(struct sradix_tree_root *root, 
+extern void sradix_tree_delete_from_leaf(struct sradix_tree_root *root,
 			struct sradix_tree_node *node, unsigned long index);
 
 extern void *sradix_tree_lookup(struct sradix_tree_root *root, unsigned long index);

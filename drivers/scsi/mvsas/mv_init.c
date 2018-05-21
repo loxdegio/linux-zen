@@ -61,7 +61,7 @@ static struct scsi_host_template mvs_sht = {
 	.max_sectors		= SCSI_DEFAULT_MAX_SECTORS,
 	.use_clustering		= ENABLE_CLUSTERING,
 	.eh_device_reset_handler = sas_eh_device_reset_handler,
-	.eh_bus_reset_handler	= sas_eh_bus_reset_handler,
+	.eh_target_reset_handler = sas_eh_target_reset_handler,
 	.target_destroy		= sas_target_destroy,
 	.ioctl			= sas_ioctl,
 	.shost_attrs		= mvst_host_attrs,
@@ -83,6 +83,8 @@ static struct sas_domain_function_template mvs_transport_ops = {
 	.lldd_query_task	= mvs_query_task,
 	.lldd_port_formed	= mvs_port_formed,
 	.lldd_port_deformed     = mvs_port_deformed,
+
+	.lldd_write_gpio	= mvs_gpio_write,
 
 };
 
@@ -123,8 +125,7 @@ static void mvs_free(struct mvs_info *mvi)
 	else
 		slot_nr = MVS_CHIP_SLOT_SZ;
 
-	if (mvi->dma_pool)
-		pci_pool_destroy(mvi->dma_pool);
+	dma_pool_destroy(mvi->dma_pool);
 
 	if (mvi->tx)
 		dma_free_coherent(mvi->dev,
@@ -294,7 +295,8 @@ static int mvs_alloc(struct mvs_info *mvi, struct Scsi_Host *shost)
 		goto err_out;
 
 	sprintf(pool_name, "%s%d", "mvs_dma_pool", mvi->id);
-	mvi->dma_pool = pci_pool_create(pool_name, mvi->pdev, MVS_SLOT_BUF_SZ, 16, 0);
+	mvi->dma_pool = dma_pool_create(pool_name, &mvi->pdev->dev,
+					MVS_SLOT_BUF_SZ, 16, 0);
 	if (!mvi->dma_pool) {
 			printk(KERN_DEBUG "failed to create dma pool %s.\n", pool_name);
 			goto err_out;
@@ -555,14 +557,14 @@ static int mvs_pci_init(struct pci_dev *pdev, const struct pci_device_id *ent)
 	SHOST_TO_SAS_HA(shost) =
 		kcalloc(1, sizeof(struct sas_ha_struct), GFP_KERNEL);
 	if (!SHOST_TO_SAS_HA(shost)) {
-		kfree(shost);
+		scsi_host_put(shost);
 		rc = -ENOMEM;
 		goto err_out_regions;
 	}
 
 	rc = mvs_prep_sas_ha_init(shost, chip);
 	if (rc) {
-		kfree(shost);
+		scsi_host_put(shost);
 		rc = -ENOMEM;
 		goto err_out_regions;
 	}
@@ -640,7 +642,6 @@ static void mvs_pci_remove(struct pci_dev *pdev)
 	tasklet_kill(&((struct mvs_prv_info *)sha->lldd_ha)->mv_tasklet);
 #endif
 
-	scsi_remove_host(mvi->shost);
 	sas_unregister_ha(sha);
 	sas_remove_host(mvi->shost);
 
@@ -702,24 +703,7 @@ static struct pci_device_id mvs_pci_table[] = {
 		.class_mask	= 0,
 		.driver_data	= chip_9445,
 	},
-	{
-		.vendor		= PCI_VENDOR_ID_MARVELL_EXT,
-		.device		= 0x9485,
-		.subvendor	= PCI_ANY_ID,
-		.subdevice	= 0x9480,
-		.class		= 0,
-		.class_mask	= 0,
-		.driver_data	= chip_9485,
-	},
-	{
-		.vendor		= PCI_VENDOR_ID_MARVELL_EXT,
-		.device		= 0x9485,
-		.subvendor	= PCI_ANY_ID,
-		.subdevice	= 0x9485,
-		.class		= 0,
-		.class_mask	= 0,
-		.driver_data	= chip_9485,
-	},
+	{ PCI_VDEVICE(MARVELL_EXT, 0x9485), chip_9485 }, /* Marvell 9480/9485 (any vendor/model) */
 	{ PCI_VDEVICE(OCZ, 0x1021), chip_9485}, /* OCZ RevoDrive3 */
 	{ PCI_VDEVICE(OCZ, 0x1022), chip_9485}, /* OCZ RevoDrive3/zDriveR4 (exact model unknown) */
 	{ PCI_VDEVICE(OCZ, 0x1040), chip_9485}, /* OCZ RevoDrive3/zDriveR4 (exact model unknown) */

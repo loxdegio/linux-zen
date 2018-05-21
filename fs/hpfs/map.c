@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/hpfs/map.c
  *
@@ -133,7 +134,7 @@ __le32 *hpfs_load_bitmap_directory(struct super_block *s, secno bmp)
 void hpfs_load_hotfix_map(struct super_block *s, struct hpfs_spare_block *spareblock)
 {
 	struct quad_buffer_head qbh;
-	u32 *directory;
+	__le32 *directory;
 	u32 n_hotfixes, n_used_hotfixes;
 	unsigned i;
 

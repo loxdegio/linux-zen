@@ -55,8 +55,8 @@ static int rome_patch_ver_req(struct hci_dev *hdev, u32 *rome_version)
 	}
 
 	edl = (struct edl_event_hdr *)(skb->data);
-	if (!edl || !edl->data) {
-		BT_ERR("%s: TLV with no header or no data", hdev->name);
+	if (!edl) {
+		BT_ERR("%s: TLV with no header", hdev->name);
 		err = -EILSEQ;
 		goto out;
 	}
@@ -81,7 +81,7 @@ static int rome_patch_ver_req(struct hci_dev *hdev, u32 *rome_version)
 	 * and lower 2 bytes from patch will be used.
 	 */
 	*rome_version = (le32_to_cpu(ver->soc_id) << 16) |
-		        (le16_to_cpu(ver->rome_ver) & 0x0000ffff);
+			(le16_to_cpu(ver->rome_ver) & 0x0000ffff);
 
 out:
 	kfree_skb(skb);
@@ -224,8 +224,8 @@ static int rome_tlv_send_segment(struct hci_dev *hdev, int idx, int seg_size,
 	}
 
 	edl = (struct edl_event_hdr *)(skb->data);
-	if (!edl || !edl->data) {
-		BT_ERR("%s: TLV with no header or no data", hdev->name);
+	if (!edl) {
+		BT_ERR("%s: TLV with no header", hdev->name);
 		err = -EILSEQ;
 		goto out;
 	}

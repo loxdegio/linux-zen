@@ -33,7 +33,6 @@
 
 #define pr_fmt(fmt) "xen:" KBUILD_MODNAME ": " fmt
 
-#include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
@@ -43,6 +42,7 @@
 #include <linux/delay.h>
 #include <linux/hardirq.h>
 #include <linux/workqueue.h>
+#include <linux/ratelimit.h>
 
 #include <xen/xen.h>
 #include <xen/interface/xen.h>
@@ -128,7 +128,7 @@ struct unmap_refs_callback_data {
 	int result;
 };
 
-static struct gnttab_ops *gnttab_interface;
+static const struct gnttab_ops *gnttab_interface;
 
 static int grant_table_version;
 static int grefs_per_grant_frame;
@@ -328,7 +328,7 @@ static void gnttab_handle_deferred(unsigned long unused)
 			if (entry->page) {
 				pr_debug("freeing g.e. %#x (pfn %#lx)\n",
 					 entry->ref, page_to_pfn(entry->page));
-				__free_page(entry->page);
+				put_page(entry->page);
 			} else
 				pr_info("freeing g.e. %#x\n", entry->ref);
 			kfree(entry);
@@ -384,7 +384,7 @@ void gnttab_end_foreign_access(grant_ref_t ref, int readonly,
 	if (gnttab_end_foreign_access_ref(ref, readonly)) {
 		put_free_entry(ref);
 		if (page != 0)
-			free_page(page);
+			put_page(virt_to_page(page));
 	} else
 		gnttab_add_deferred(ref, readonly,
 				    page ? virt_to_page(page) : NULL);
@@ -1013,7 +1013,7 @@ static int gnttab_map(unsigned int start_idx, unsigned int end_idx)
 	return rc;
 }
 
-static struct gnttab_ops gnttab_v1_ops = {
+static const struct gnttab_ops gnttab_v1_ops = {
 	.map_frames			= gnttab_map_frames_v1,
 	.unmap_frames			= gnttab_unmap_frames_v1,
 	.update_entry			= gnttab_update_entry_v1,
@@ -1073,8 +1073,14 @@ static int gnttab_expand(unsigned int req_entries)
 	cur = nr_grant_frames;
 	extra = ((req_entries + (grefs_per_grant_frame-1)) /
 		 grefs_per_grant_frame);
-	if (cur + extra > gnttab_max_grant_frames())
+	if (cur + extra > gnttab_max_grant_frames()) {
+		pr_warn_ratelimited("xen/grant-table: max_grant_frames reached"
+				    " cur=%u extra=%u limit=%u"
+				    " gnttab_free_count=%u req_entries=%u\n",
+				    cur, extra, gnttab_max_grant_frames(),
+				    gnttab_free_count, req_entries);
 		return -ENOSPC;
+	}
 
 	rc = gnttab_map(cur, cur + extra - 1);
 	if (rc == 0)
@@ -1147,12 +1153,12 @@ EXPORT_SYMBOL_GPL(gnttab_init);
 
 static int __gnttab_init(void)
 {
-	/* Delay grant-table initialization in the PV on HVM case */
-	if (xen_hvm_domain())
-		return 0;
-
-	if (!xen_pv_domain())
+	if (!xen_domain())
 		return -ENODEV;
+
+	/* Delay grant-table initialization in the PV on HVM case */
+	if (xen_hvm_domain() && !xen_pvh_domain())
+		return 0;
 
 	return gnttab_init();
 }

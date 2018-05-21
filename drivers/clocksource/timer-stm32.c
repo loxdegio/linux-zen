@@ -98,13 +98,17 @@ static struct stm32_clock_event_ddata clock_event_ddata = {
 	},
 };
 
-static void __init stm32_clockevent_init(struct device_node *np)
+static int __init stm32_clockevent_init(struct device_node *np)
 {
 	struct stm32_clock_event_ddata *data = &clock_event_ddata;
 	struct clk *clk;
 	struct reset_control *rstc;
 	unsigned long rate, max_delta;
 	int irq, ret, bits, prescaler = 1;
+
+	data = kmemdup(&clock_event_ddata, sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
 
 	clk = of_clk_get(np, 0);
 	if (IS_ERR(clk)) {
@@ -130,13 +134,15 @@ static void __init stm32_clockevent_init(struct device_node *np)
 
 	data->base = of_iomap(np, 0);
 	if (!data->base) {
+		ret = -ENXIO;
 		pr_err("failed to map registers for clockevent\n");
 		goto err_iomap;
 	}
 
 	irq = irq_of_parse_and_map(np, 0);
 	if (!irq) {
-		pr_err("%s: failed to get irq.\n", np->full_name);
+		ret = -EINVAL;
+		pr_err("%pOF: failed to get irq.\n", np);
 		goto err_get_irq;
 	}
 
@@ -154,8 +160,8 @@ static void __init stm32_clockevent_init(struct device_node *np)
 
 	writel_relaxed(prescaler - 1, data->base + TIM_PSC);
 	writel_relaxed(TIM_EGR_UG, data->base + TIM_EGR);
-	writel_relaxed(TIM_DIER_UIE, data->base + TIM_DIER);
 	writel_relaxed(0, data->base + TIM_SR);
+	writel_relaxed(TIM_DIER_UIE, data->base + TIM_DIER);
 
 	data->periodic_top = DIV_ROUND_CLOSEST(rate, prescaler * HZ);
 
@@ -166,14 +172,14 @@ static void __init stm32_clockevent_init(struct device_node *np)
 	ret = request_irq(irq, stm32_clock_event_handler, IRQF_TIMER,
 			"stm32 clockevent", data);
 	if (ret) {
-		pr_err("%s: failed to request irq.\n", np->full_name);
+		pr_err("%pOF: failed to request irq.\n", np);
 		goto err_get_irq;
 	}
 
-	pr_info("%s: STM32 clockevent driver initialized (%d bits)\n",
-			np->full_name, bits);
+	pr_info("%pOF: STM32 clockevent driver initialized (%d bits)\n",
+			np, bits);
 
-	return;
+	return ret;
 
 err_get_irq:
 	iounmap(data->base);
@@ -182,7 +188,8 @@ err_iomap:
 err_clk_enable:
 	clk_put(clk);
 err_clk_get:
-	return;
+	kfree(data);
+	return ret;
 }
 
-CLOCKSOURCE_OF_DECLARE(stm32, "st,stm32-timer", stm32_clockevent_init);
+TIMER_OF_DECLARE(stm32, "st,stm32-timer", stm32_clockevent_init);

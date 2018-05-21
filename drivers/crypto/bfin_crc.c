@@ -203,7 +203,7 @@ static void bfin_crypto_crc_config_dma(struct bfin_crypto_crc *crc)
 			crc->sg_cpu[i].x_count = 1;
 			crc->sg_cpu[i].x_modify = CHKSUM_DIGEST_SIZE;
 			dev_dbg(crc->dev, "%d: crc_dma: start_addr:0x%lx, "
-				"cfg:0x%lx, x_count:0x%lx, x_modify:0x%lx\n",
+				"cfg:0x%x, x_count:0x%x, x_modify:0x%x\n",
 				i, crc->sg_cpu[i].start_addr,
 				crc->sg_cpu[i].cfg, crc->sg_cpu[i].x_count,
 				crc->sg_cpu[i].x_modify);
@@ -233,7 +233,7 @@ static void bfin_crypto_crc_config_dma(struct bfin_crypto_crc *crc)
 		crc->sg_cpu[i].x_count = dma_count;
 		crc->sg_cpu[i].x_modify = dma_mod;
 		dev_dbg(crc->dev, "%d: crc_dma: start_addr:0x%lx, "
-			"cfg:0x%lx, x_count:0x%lx, x_modify:0x%lx\n",
+			"cfg:0x%x, x_count:0x%x, x_modify:0x%x\n",
 			i, crc->sg_cpu[i].start_addr,
 			crc->sg_cpu[i].cfg, crc->sg_cpu[i].x_count,
 			crc->sg_cpu[i].x_modify);
@@ -257,7 +257,7 @@ static void bfin_crypto_crc_config_dma(struct bfin_crypto_crc *crc)
 		crc->sg_cpu[i].x_count = 1;
 		crc->sg_cpu[i].x_modify = CHKSUM_DIGEST_SIZE;
 		dev_dbg(crc->dev, "%d: crc_dma: start_addr:0x%lx, "
-			"cfg:0x%lx, x_count:0x%lx, x_modify:0x%lx\n",
+			"cfg:0x%x, x_count:0x%x, x_modify:0x%x\n",
 			i, crc->sg_cpu[i].start_addr,
 			crc->sg_cpu[i].cfg, crc->sg_cpu[i].x_count,
 			crc->sg_cpu[i].x_modify);
@@ -494,7 +494,8 @@ static struct ahash_alg algs = {
 		.cra_driver_name	= DRIVER_NAME,
 		.cra_priority		= 100,
 		.cra_flags		= CRYPTO_ALG_TYPE_AHASH |
-						CRYPTO_ALG_ASYNC,
+						CRYPTO_ALG_ASYNC |
+						CRYPTO_ALG_OPTIONAL_KEY,
 		.cra_blocksize		= CHKSUM_BLOCK_SIZE,
 		.cra_ctxsize		= sizeof(struct bfin_crypto_crc_ctx),
 		.cra_alignmask		= 3,
@@ -588,11 +589,6 @@ static int bfin_crypto_crc_probe(struct platform_device *pdev)
 	crypto_init_queue(&crc->queue, CRC_CCRYPTO_QUEUE_LENGTH);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (res == NULL) {
-		dev_err(&pdev->dev, "Cannot get IORESOURCE_MEM\n");
-		return -ENOENT;
-	}
-
 	crc->regs = devm_ioremap_resource(dev, res);
 	if (IS_ERR((void *)crc->regs)) {
 		dev_err(&pdev->dev, "Cannot map CRC IO\n");

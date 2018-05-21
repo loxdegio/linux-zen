@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _UAPI_LINUX_SCHED_H
 #define _UAPI_LINUX_SCHED_H
 
@@ -21,8 +22,7 @@
 #define CLONE_DETACHED		0x00400000	/* Unused, ignored */
 #define CLONE_UNTRACED		0x00800000	/* set if the tracing process can't force CLONE_PTRACE on this clone */
 #define CLONE_CHILD_SETTID	0x01000000	/* set the TID in the child */
-/* 0x02000000 was previously the unused CLONE_STOPPED (Start in stopped state)
-   and is now available for re-use. */
+#define CLONE_NEWCGROUP		0x02000000	/* New cgroup namespace */
 #define CLONE_NEWUTS		0x04000000	/* New utsname namespace */
 #define CLONE_NEWIPC		0x08000000	/* New ipc namespace */
 #define CLONE_NEWUSER		0x10000000	/* New user namespace */
@@ -37,16 +37,16 @@
 #define SCHED_FIFO		1
 #define SCHED_RR		2
 #define SCHED_BATCH		3
-/* SCHED_ISO: Implemented on BFS only */
+/* SCHED_ISO: Implemented on MuQSS only */
 #define SCHED_IDLE		5
-#ifdef CONFIG_SCHED_BFS
+#ifdef CONFIG_SCHED_MUQSS
 #define SCHED_ISO		4
 #define SCHED_IDLEPRIO		SCHED_IDLE
 #define SCHED_MAX		(SCHED_IDLEPRIO)
 #define SCHED_RANGE(policy)	((policy) <= SCHED_MAX)
-#else /* CONFIG_SCHED_BFS */
+#else /* CONFIG_SCHED_MUQSS */
 #define SCHED_DEADLINE		6
-#endif /* CONFIG_SCHED_BFS */
+#endif /* CONFIG_SCHED_MUQSS */
 
 /* Can be ORed in to make sure the process is reverted back to SCHED_NORMAL on fork */
 #define SCHED_RESET_ON_FORK     0x40000000
@@ -55,5 +55,6 @@
  * For the sched_{set,get}attr() calls
  */
 #define SCHED_FLAG_RESET_ON_FORK	0x01
+#define SCHED_FLAG_RECLAIM		0x02
 
 #endif /* _UAPI_LINUX_SCHED_H */

@@ -1,7 +1,17 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_X86_MODULE_H
 #define _ASM_X86_MODULE_H
 
 #include <asm-generic/module.h>
+#include <asm/orc_types.h>
+
+struct mod_arch_specific {
+#ifdef CONFIG_UNWINDER_ORC
+	unsigned int num_orcs;
+	int *orc_unwind_ip;
+	struct orc_entry *orc_unwind;
+#endif
+};
 
 #ifdef CONFIG_X86_64
 /* X86_64 does not define MODULE_PROC_FAMILY */
@@ -62,11 +72,15 @@
 #elif defined CONFIG_MBULLDOZER
 #define MODULE_PROC_FAMILY "BULLDOZER "
 #elif defined CONFIG_MPILEDRIVER
-#define MODULE_PROC_FAMILY "STEAMROLLER "
-#elif defined CONFIG_MSTEAMROLLER
 #define MODULE_PROC_FAMILY "PILEDRIVER "
+#elif defined CONFIG_MSTEAMROLLER
+#define MODULE_PROC_FAMILY "STEAMROLLER "
 #elif defined CONFIG_MJAGUAR
 #define MODULE_PROC_FAMILY "JAGUAR "
+#elif defined CONFIG_MEXCAVATOR
+#define MODULE_PROC_FAMILY "EXCAVATOR "
+#elif defined CONFIG_MZEN
+#define MODULE_PROC_FAMILY "ZEN "
 #elif defined CONFIG_MELAN
 #define MODULE_PROC_FAMILY "ELAN "
 #elif defined CONFIG_MCRUSOE

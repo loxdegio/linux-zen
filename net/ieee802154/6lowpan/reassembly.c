@@ -580,19 +580,14 @@ static int __net_init lowpan_frags_init_net(struct net *net)
 {
 	struct netns_ieee802154_lowpan *ieee802154_lowpan =
 		net_ieee802154_lowpan(net);
-	int res;
 
 	ieee802154_lowpan->frags.high_thresh = IPV6_FRAG_HIGH_THRESH;
 	ieee802154_lowpan->frags.low_thresh = IPV6_FRAG_LOW_THRESH;
 	ieee802154_lowpan->frags.timeout = IPV6_FRAG_TIMEOUT;
 
-	res = inet_frags_init_net(&ieee802154_lowpan->frags);
-	if (res)
-		return res;
-	res = lowpan_frags_ns_sysctl_register(net);
-	if (res)
-		inet_frags_uninit_net(&ieee802154_lowpan->frags);
-	return res;
+	inet_frags_init_net(&ieee802154_lowpan->frags);
+
+	return lowpan_frags_ns_sysctl_register(net);
 }
 
 static void __net_exit lowpan_frags_exit_net(struct net *net)
@@ -624,7 +619,6 @@ int __init lowpan_net_frag_init(void)
 	lowpan_frags.hashfn = lowpan_hashfn;
 	lowpan_frags.constructor = lowpan_frag_init;
 	lowpan_frags.destructor = NULL;
-	lowpan_frags.skb_free = NULL;
 	lowpan_frags.qsize = sizeof(struct frag_queue);
 	lowpan_frags.match = lowpan_frag_match;
 	lowpan_frags.frag_expire = lowpan_frag_expire;

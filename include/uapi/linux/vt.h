@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _UAPI_LINUX_VT_H
 #define _UAPI_LINUX_VT_H
 
@@ -16,13 +17,11 @@
  * resizing).
  */
 #define MIN_NR_CONSOLES 1       /* must be at least 1 */
-
 /*
  * NR_TTY_DEVICES:
- * Value MUST be at least 11 and must never be higher then 63
+ * Value MUST be at least 12 and must never be higher then 63
  */
-#define MAX_NR_CONSOLES CONFIG_NR_TTY_DEVICES		/* serial lines start above this */
-#define MAX_NR_USER_CONSOLES CONFIG_NR_TTY_DEVICES	/* must be root to allocate above this */
+#define MAX_NR_CONSOLES CONFIG_NR_TTY_DEVICES	/* serial lines start above this */
 		/* Note: the ioctl VT_GETSTATE does not work for
 		   consoles 16 and higher (since it returns a short) */
 

@@ -506,8 +506,8 @@ static struct sock *__llc_lookup_established(struct llc_sap *sap,
 again:
 	sk_nulls_for_each_rcu(rc, node, laddr_hb) {
 		if (llc_estab_match(sap, daddr, laddr, rc)) {
-			/* Extra checks required by SLAB_DESTROY_BY_RCU */
-			if (unlikely(!atomic_inc_not_zero(&rc->sk_refcnt)))
+			/* Extra checks required by SLAB_TYPESAFE_BY_RCU */
+			if (unlikely(!refcount_inc_not_zero(&rc->sk_refcnt)))
 				goto again;
 			if (unlikely(llc_sk(rc)->sap != sap ||
 				     !llc_estab_match(sap, daddr, laddr, rc))) {
@@ -565,8 +565,8 @@ static struct sock *__llc_lookup_listener(struct llc_sap *sap,
 again:
 	sk_nulls_for_each_rcu(rc, node, laddr_hb) {
 		if (llc_listener_match(sap, laddr, rc)) {
-			/* Extra checks required by SLAB_DESTROY_BY_RCU */
-			if (unlikely(!atomic_inc_not_zero(&rc->sk_refcnt)))
+			/* Extra checks required by SLAB_TYPESAFE_BY_RCU */
+			if (unlikely(!refcount_inc_not_zero(&rc->sk_refcnt)))
 				goto again;
 			if (unlikely(llc_sk(rc)->sap != sap ||
 				     !llc_listener_match(sap, laddr, rc))) {
@@ -821,7 +821,10 @@ void llc_conn_handler(struct llc_sap *sap, struct sk_buff *skb)
 		 * another trick required to cope with how the PROCOM state
 		 * machine works. -acme
 		 */
+		skb_orphan(skb);
+		sock_hold(sk);
 		skb->sk = sk;
+		skb->destructor = sock_efree;
 	}
 	if (!sock_owned_by_user(sk))
 		llc_conn_rcv(sk, skb);
@@ -948,6 +951,26 @@ out:
 	return sk;
 }
 
+void llc_sk_stop_all_timers(struct sock *sk, bool sync)
+{
+	struct llc_sock *llc = llc_sk(sk);
+
+	if (sync) {
+		del_timer_sync(&llc->pf_cycle_timer.timer);
+		del_timer_sync(&llc->ack_timer.timer);
+		del_timer_sync(&llc->rej_sent_timer.timer);
+		del_timer_sync(&llc->busy_state_timer.timer);
+	} else {
+		del_timer(&llc->pf_cycle_timer.timer);
+		del_timer(&llc->ack_timer.timer);
+		del_timer(&llc->rej_sent_timer.timer);
+		del_timer(&llc->busy_state_timer.timer);
+	}
+
+	llc->ack_must_be_send = 0;
+	llc->ack_pf = 0;
+}
+
 /**
  *	llc_sk_free - Frees a LLC socket
  *	@sk - socket to free
@@ -960,7 +983,7 @@ void llc_sk_free(struct sock *sk)
 
 	llc->state = LLC_CONN_OUT_OF_SVC;
 	/* Stop all (possibly) running timers */
-	llc_conn_ac_stop_all_timers(sk, NULL);
+	llc_sk_stop_all_timers(sk, true);
 #ifdef DEBUG_LLC_CONN_ALLOC
 	printk(KERN_INFO "%s: unackq=%d, txq=%d\n", __func__,
 		skb_queue_len(&llc->pdu_unack_q),
@@ -970,9 +993,9 @@ void llc_sk_free(struct sock *sk)
 	skb_queue_purge(&sk->sk_write_queue);
 	skb_queue_purge(&llc->pdu_unack_q);
 #ifdef LLC_REFCNT_DEBUG
-	if (atomic_read(&sk->sk_refcnt) != 1) {
+	if (refcount_read(&sk->sk_refcnt) != 1) {
 		printk(KERN_DEBUG "Destruction of LLC sock %p delayed in %s, cnt=%d\n",
-			sk, __func__, atomic_read(&sk->sk_refcnt));
+			sk, __func__, refcount_read(&sk->sk_refcnt));
 		printk(KERN_DEBUG "%d LLC sockets are still alive\n",
 			atomic_read(&llc_sock_nr));
 	} else {

@@ -121,7 +121,7 @@ static void check_vbus_state(struct tahvo_usb *tu)
 	prev_state = tu->vbus_state;
 	tu->vbus_state = reg & TAHVO_STAT_VBUS;
 	if (prev_state != tu->vbus_state) {
-		extcon_set_cable_state_(tu->extcon, EXTCON_USB, tu->vbus_state);
+		extcon_set_state_sync(tu->extcon, EXTCON_USB, tu->vbus_state);
 		sysfs_notify(&tu->pt_dev->dev.kobj, NULL, "vbus_state");
 	}
 }
@@ -130,7 +130,7 @@ static void tahvo_usb_become_host(struct tahvo_usb *tu)
 {
 	struct retu_dev *rdev = dev_get_drvdata(tu->pt_dev->dev.parent);
 
-	extcon_set_cable_state_(tu->extcon, EXTCON_USB_HOST, true);
+	extcon_set_state_sync(tu->extcon, EXTCON_USB_HOST, true);
 
 	/* Power up the transceiver in USB host mode */
 	retu_write(rdev, TAHVO_REG_USBR, USBR_REGOUT | USBR_NSUSPEND |
@@ -149,7 +149,7 @@ static void tahvo_usb_become_peripheral(struct tahvo_usb *tu)
 {
 	struct retu_dev *rdev = dev_get_drvdata(tu->pt_dev->dev.parent);
 
-	extcon_set_cable_state_(tu->extcon, EXTCON_USB_HOST, false);
+	extcon_set_state_sync(tu->extcon, EXTCON_USB_HOST, false);
 
 	/* Power up transceiver and set it in USB peripheral mode */
 	retu_write(rdev, TAHVO_REG_USBR, USBR_SLAVE_CONTROL | USBR_REGOUT |
@@ -326,7 +326,7 @@ static struct attribute *tahvo_attributes[] = {
 	NULL
 };
 
-static struct attribute_group tahvo_attr_group = {
+static const struct attribute_group tahvo_attr_group = {
 	.attrs = tahvo_attributes,
 };
 
@@ -368,7 +368,8 @@ static int tahvo_usb_probe(struct platform_device *pdev)
 	tu->extcon = devm_extcon_dev_allocate(&pdev->dev, tahvo_cable);
 	if (IS_ERR(tu->extcon)) {
 		dev_err(&pdev->dev, "failed to allocate memory for extcon\n");
-		return -ENOMEM;
+		ret = PTR_ERR(tu->extcon);
+		goto err_disable_clk;
 	}
 
 	ret = devm_extcon_dev_register(&pdev->dev, tu->extcon);
@@ -379,9 +380,9 @@ static int tahvo_usb_probe(struct platform_device *pdev)
 	}
 
 	/* Set the initial cable state. */
-	extcon_set_cable_state_(tu->extcon, EXTCON_USB_HOST,
+	extcon_set_state_sync(tu->extcon, EXTCON_USB_HOST,
 			       tu->tahvo_mode == TAHVO_MODE_HOST);
-	extcon_set_cable_state_(tu->extcon, EXTCON_USB, tu->vbus_state);
+	extcon_set_state_sync(tu->extcon, EXTCON_USB, tu->vbus_state);
 
 	/* Create OTG interface */
 	tahvo_usb_power_off(tu);

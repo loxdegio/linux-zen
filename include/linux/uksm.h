@@ -25,10 +25,10 @@ extern void uksm_vma_add_new(struct vm_area_struct *vma);
 extern void uksm_remove_vma(struct vm_area_struct *vma);
 
 #define UKSM_SLOT_NEED_SORT	(1 << 0)
-#define UKSM_SLOT_NEED_RERAND 	(1 << 1)
-#define UKSM_SLOT_SCANNED     	(1 << 2) /* It's scanned in this round */
-#define UKSM_SLOT_FUL_SCANNED 	(1 << 3)
-#define UKSM_SLOT_IN_UKSM 	(1 << 4)
+#define UKSM_SLOT_NEED_RERAND	(1 << 1)
+#define UKSM_SLOT_SCANNED	(1 << 2) /* It's scanned in this round */
+#define UKSM_SLOT_FUL_SCANNED	(1 << 3)
+#define UKSM_SLOT_IN_UKSM	(1 << 4)
 
 struct vma_slot {
 	struct sradix_tree_node *snode;
@@ -38,6 +38,7 @@ struct vma_slot {
 	unsigned long fully_scanned_round;
 	unsigned long dedup_num;
 	unsigned long pages_scanned;
+	unsigned long this_sampled;
 	unsigned long last_scanned;
 	unsigned long pages_to_scan;
 	struct scan_rung *rung;
@@ -83,12 +84,14 @@ static inline void uksm_cow_pte(struct vm_area_struct *vma, pte_t pte)
 
 static inline int uksm_flags_can_scan(unsigned long vm_flags)
 {
-#ifndef VM_SAO
-#define VM_SAO 0
+#ifdef VM_SAO
+		if (vm_flags & VM_SAO)
+			return 0;
 #endif
+
 	return !(vm_flags & (VM_PFNMAP | VM_IO  | VM_DONTEXPAND |
 			     VM_HUGETLB | VM_MIXEDMAP | VM_SHARED
-			     | VM_MAYSHARE | VM_GROWSUP | VM_GROWSDOWN | VM_SAO));
+			     | VM_MAYSHARE | VM_GROWSUP | VM_GROWSDOWN));
 }
 
 static inline void uksm_vm_flags_mod(unsigned long *vm_flags_p)

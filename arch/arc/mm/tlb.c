@@ -45,7 +45,7 @@
  *       in interrupt-safe region.
  *
  * Vineetg: April 23rd Bug #93131
- *    Problem: tlb_flush_kernel_range() doesnt do anything if the range to
+ *    Problem: tlb_flush_kernel_range() doesn't do anything if the range to
  *              flush is more than the size of TLB itself.
  *
  * Rahul Trivedi : Codito Technologies 2004
@@ -53,6 +53,8 @@
 
 #include <linux/module.h>
 #include <linux/bug.h>
+#include <linux/mm_types.h>
+
 #include <asm/arcregs.h>
 #include <asm/setup.h>
 #include <asm/mmu_context.h>
@@ -101,6 +103,8 @@
 
 /* A copy of the ASID from the PID reg is kept in asid_cache */
 DEFINE_PER_CPU(unsigned int, asid_cache) = MM_CTXT_FIRST_CYCLE;
+
+static int __read_mostly pae_exists;
 
 /*
  * Utility Routine to erase a J-TLB entry
@@ -167,7 +171,7 @@ static void utlb_invalidate(void)
 	/* MMU v2 introduced the uTLB Flush command.
 	 * There was however an obscure hardware bug, where uTLB flush would
 	 * fail when a prior probe for J-TLB (both totally unrelated) would
-	 * return lkup err - because the entry didnt exist in MMU.
+	 * return lkup err - because the entry didn't exist in MMU.
 	 * The Workround was to set Index reg with some valid value, prior to
 	 * flush. This was fixed in MMU v3 hence not needed any more
 	 */
@@ -210,7 +214,7 @@ static void tlb_entry_insert(unsigned int pd0, pte_t pd1)
 
 	/*
 	 * Commit the Entry to MMU
-	 * It doesnt sound safe to use the TLBWriteNI cmd here
+	 * It doesn't sound safe to use the TLBWriteNI cmd here
 	 * which doesn't flush uTLBs. I'd rather be safe than sorry.
 	 */
 	write_aux_reg(ARC_REG_TLBCOMMAND, TLBWrite);
@@ -636,7 +640,7 @@ void update_mmu_cache(struct vm_area_struct *vma, unsigned long vaddr_unaligned,
  * support.
  *
  * Normal and Super pages can co-exist (ofcourse not overlap) in TLB with a
- * new bit "SZ" in TLB page desciptor to distinguish between them.
+ * new bit "SZ" in TLB page descriptor to distinguish between them.
  * Super Page size is configurable in hardware (4K to 16M), but fixed once
  * RTL builds.
  *
@@ -782,7 +786,7 @@ void read_decode_mmu_bcr(void)
 		mmu->u_dtlb = mmu4->u_dtlb * 4;
 		mmu->u_itlb = mmu4->u_itlb * 4;
 		mmu->sasid = mmu4->sasid;
-		mmu->pae = mmu4->pae;
+		pae_exists = mmu->pae = mmu4->pae;
 	}
 }
 
@@ -793,18 +797,23 @@ char *arc_mmu_mumbojumbo(int cpu_id, char *buf, int len)
 	char super_pg[64] = "";
 
 	if (p_mmu->s_pg_sz_m)
-		scnprintf(super_pg, 64, "%dM Super Page%s, ",
+		scnprintf(super_pg, 64, "%dM Super Page %s",
 			  p_mmu->s_pg_sz_m,
 			  IS_USED_CFG(CONFIG_TRANSPARENT_HUGEPAGE));
 
 	n += scnprintf(buf + n, len - n,
-		      "MMU [v%x]\t: %dk PAGE, %sJTLB %d (%dx%d), uDTLB %d, uITLB %d %s%s\n",
+		      "MMU [v%x]\t: %dk PAGE, %sJTLB %d (%dx%d), uDTLB %d, uITLB %d%s%s\n",
 		       p_mmu->ver, p_mmu->pg_sz_k, super_pg,
 		       p_mmu->sets * p_mmu->ways, p_mmu->sets, p_mmu->ways,
 		       p_mmu->u_dtlb, p_mmu->u_itlb,
-		       IS_AVAIL2(p_mmu->pae, "PAE40 ", CONFIG_ARC_HAS_PAE40));
+		       IS_AVAIL2(p_mmu->pae, ", PAE40 ", CONFIG_ARC_HAS_PAE40));
 
 	return buf;
+}
+
+int pae40_exist_but_not_enab(void)
+{
+	return pae_exists && !is_pae40_enabled();
 }
 
 void arc_mmu_init(void)
@@ -812,7 +821,18 @@ void arc_mmu_init(void)
 	char str[256];
 	struct cpuinfo_arc_mmu *mmu = &cpuinfo_arc700[smp_processor_id()].mmu;
 
-	printk(arc_mmu_mumbojumbo(0, str, sizeof(str)));
+	pr_info("%s", arc_mmu_mumbojumbo(0, str, sizeof(str)));
+
+	/*
+	 * Can't be done in processor.h due to header include depenedencies
+	 */
+	BUILD_BUG_ON(!IS_ALIGNED((CONFIG_ARC_KVADDR_SIZE << 20), PMD_SIZE));
+
+	/*
+	 * stack top size sanity check,
+	 * Can't be done in processor.h due to header include depenedencies
+	 */
+	BUILD_BUG_ON(!IS_ALIGNED(STACK_TOP, PMD_SIZE));
 
 	/* For efficiency sake, kernel is compile time built for a MMU ver
 	 * This must match the hardware it is running on.
@@ -846,6 +866,9 @@ void arc_mmu_init(void)
 	/* swapper_pg_dir is the pgd for the kernel, used by vmalloc */
 	write_aux_reg(ARC_REG_SCRATCH_DATA0, swapper_pg_dir);
 #endif
+
+	if (pae40_exist_but_not_enab())
+		write_aux_reg(ARC_REG_TLBPD1HI, 0);
 }
 
 /*
@@ -884,9 +907,6 @@ void do_tlb_overlap_fault(unsigned long cause, unsigned long address,
 	int set;
 
 	local_irq_save(flags);
-
-	/* re-enable the MMU */
-	write_aux_reg(ARC_REG_PID, MMU_ENABLE | read_aux_reg(ARC_REG_PID));
 
 	/* loop thru all sets of TLB */
 	for (set = 0; set < mmu->sets; set++) {

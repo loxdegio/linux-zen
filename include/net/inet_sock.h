@@ -17,7 +17,6 @@
 #define _INET_SOCK_H
 
 #include <linux/bitops.h>
-#include <linux/kmemcheck.h>
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/jhash.h>
@@ -28,6 +27,7 @@
 #include <net/request_sock.h>
 #include <net/netns/hash.h>
 #include <net/tcp_states.h>
+#include <net/l3mdev.h>
 
 /** struct ip_options - IP Options
  *
@@ -83,7 +83,6 @@ struct inet_request_sock {
 #define ireq_state		req.__req_common.skc_state
 #define ireq_family		req.__req_common.skc_family
 
-	kmemcheck_bitfield_begin(flags);
 	u16			snd_wscale : 4,
 				rcv_wscale : 4,
 				tstamp_ok  : 1,
@@ -92,11 +91,15 @@ struct inet_request_sock {
 				ecn_ok	   : 1,
 				acked	   : 1,
 				no_srccheck: 1;
-	kmemcheck_bitfield_end(flags);
 	u32                     ir_mark;
 	union {
-		struct ip_options_rcu	*opt;
-		struct sk_buff		*pktopts;
+		struct ip_options_rcu __rcu	*ireq_opt;
+#if IS_ENABLED(CONFIG_IPV6)
+		struct {
+			struct ipv6_txoptions	*ipv6_opt;
+			struct sk_buff		*pktopts;
+		};
+#endif
 	};
 };
 
@@ -111,6 +114,25 @@ static inline u32 inet_request_mark(const struct sock *sk, struct sk_buff *skb)
 		return skb->mark;
 
 	return sk->sk_mark;
+}
+
+static inline int inet_request_bound_dev_if(const struct sock *sk,
+					    struct sk_buff *skb)
+{
+#ifdef CONFIG_NET_L3_MASTER_DEV
+	struct net *net = sock_net(sk);
+
+	if (!sk->sk_bound_dev_if && net->ipv4.sysctl_tcp_l3mdev_accept)
+		return l3mdev_master_ifindex_by_index(net, skb->skb_iif);
+#endif
+
+	return sk->sk_bound_dev_if;
+}
+
+static inline struct ip_options_rcu *ireq_opt_deref(const struct inet_request_sock *ireq)
+{
+	return rcu_dereference_check(ireq->ireq_opt,
+				     refcount_read(&ireq->req.rsk_refcnt) > 0);
 }
 
 struct inet_cork {
@@ -187,7 +209,11 @@ struct inet_sock {
 				transparent:1,
 				mc_all:1,
 				nodefrag:1;
-	__u8			bind_address_no_port:1;
+	__u8			bind_address_no_port:1,
+				defer_connect:1; /* Indicates that fastopen_connect is set
+						  * and cookie exists so we defer connect
+						  * until first data frame is written
+						  */
 	__u8			rcv_tos;
 	__u8			convert_csum;
 	int			uc_index;
@@ -209,6 +235,7 @@ struct inet_sock {
 #define IP_CMSG_PASSSEC		BIT(5)
 #define IP_CMSG_ORIGDSTADDR	BIT(6)
 #define IP_CMSG_CHECKSUM	BIT(7)
+#define IP_CMSG_RECVFRAGSIZE	BIT(8)
 
 /**
  * sk_to_full_sk - Access to a full socket

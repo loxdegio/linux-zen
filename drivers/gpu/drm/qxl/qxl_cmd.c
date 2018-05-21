@@ -203,7 +203,7 @@ qxl_push_cursor_ring_release(struct qxl_device *qdev, struct qxl_release *releas
 bool qxl_queue_garbage_collect(struct qxl_device *qdev, bool flush)
 {
 	if (!qxl_check_idle(qdev->release_ring)) {
-		queue_work(qdev->gc_queue, &qdev->gc_work);
+		schedule_work(&qdev->gc_work);
 		if (flush)
 			flush_work(&qdev->gc_work);
 		return true;
@@ -388,7 +388,11 @@ void qxl_io_create_primary(struct qxl_device *qdev,
 	create->width = bo->surf.width;
 	create->height = bo->surf.height;
 	create->stride = bo->surf.stride;
-	create->mem = qxl_bo_physical_address(qdev, bo, offset);
+	if (bo->shadow) {
+		create->mem = qxl_bo_physical_address(qdev, bo->shadow, offset);
+	} else {
+		create->mem = qxl_bo_physical_address(qdev, bo, offset);
+	}
 
 	QXL_INFO(qdev, "%s: mem = %llx, from %p\n", __func__, create->mem,
 		 bo->kptr);
@@ -578,7 +582,7 @@ int qxl_hw_surface_dealloc(struct qxl_device *qdev,
 	return 0;
 }
 
-int qxl_update_surface(struct qxl_device *qdev, struct qxl_bo *surf)
+static int qxl_update_surface(struct qxl_device *qdev, struct qxl_bo *surf)
 {
 	struct qxl_rect rect;
 	int ret;
@@ -624,7 +628,7 @@ static int qxl_reap_surf(struct qxl_device *qdev, struct qxl_bo *surf, bool stal
 	if (stall)
 		mutex_unlock(&qdev->surf_evict_mutex);
 
-	ret = ttm_bo_wait(&surf->tbo, true, true, !stall);
+	ret = ttm_bo_wait(&surf->tbo, true, !stall);
 
 	if (stall)
 		mutex_lock(&qdev->surf_evict_mutex);

@@ -24,7 +24,7 @@
 #include <linux/mmc/host.h>
 #include <linux/mfd/tc6393xb.h>
 #include <linux/mfd/tmio.h>
-#include <linux/mtd/nand.h>
+#include <linux/mtd/rawnand.h>
 #include <linux/mtd/partitions.h>
 #include <linux/mtd/physmap.h>
 #include <linux/pm.h>
@@ -43,12 +43,12 @@
 #include <asm/setup.h>
 #include <asm/mach-types.h>
 
-#include <mach/pxa25x.h>
+#include "pxa25x.h"
 #include <mach/reset.h>
 #include <linux/platform_data/irda-pxaficp.h>
 #include <linux/platform_data/mmc-pxamci.h>
-#include <mach/udc.h>
-#include <mach/tosa_bt.h>
+#include "udc.h"
+#include "tosa_bt.h"
 #include <mach/audio.h>
 #include <mach/smemc.h>
 

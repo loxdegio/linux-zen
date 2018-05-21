@@ -2,7 +2,7 @@
  * hdaps.c - driver for IBM's Hard Drive Active Protection System
  *
  * Copyright (C) 2005 Robert Love <rml@novell.com>
- * Copyright (C) 2005 Jesper Juhl <jj@chaosbits.net>
+ * Copyright (C) 2005 Jesper Juhl <jesper.juhl@gmail.com>
  *
  * The HardDisk Active Protection System (hdaps) is present in IBM ThinkPads
  * starting with the R40, T41, and X40.  It provides a basic two-axis
@@ -64,7 +64,7 @@ static const struct thinkpad_ec_row ec_accel_args =
 
 #define HDAPS_INPUT_FUZZ	4	/* input event threshold */
 #define HDAPS_INPUT_FLAT	4
-#define KMACT_REMEMBER_PERIOD   (HZ/10) /* keyboard/mouse persistance */
+#define KMACT_REMEMBER_PERIOD   (HZ/10) /* keyboard/mouse persistence */
 
 /* Input IDs */
 #define HDAPS_INPUT_VENDOR	PCI_VENDOR_ID_IBM
@@ -733,7 +733,7 @@ static int __init hdaps_dmi_match_invert(const struct dmi_system_id *id)
    Note that HDAPS_DMI_MATCH_NORMAL("ThinkPad T42") would match
    "ThinkPad T42p", and enumeration stops after first match,
    so the order of the entries matters. */
-struct dmi_system_id __initdata hdaps_whitelist[] = {
+const struct dmi_system_id hdaps_whitelist[] __initconst = {
 	HDAPS_DMI_MATCH_INVERT("IBM", "ThinkPad R50p", HDAPS_ORIENT_INVERT_XY),
 	HDAPS_DMI_MATCH_INVERT("IBM", "ThinkPad R60", HDAPS_ORIENT_INVERT_XY),
 	HDAPS_DMI_MATCH_INVERT("IBM", "ThinkPad T41p", HDAPS_ORIENT_INVERT_XY),
@@ -756,7 +756,8 @@ struct dmi_system_id __initdata hdaps_whitelist[] = {
 	HDAPS_DMI_MATCH_INVERT("LENOVO", "ThinkPad T410", HDAPS_ORIENT_INVERT_XY),
 	HDAPS_DMI_MATCH_INVERT("LENOVO", "ThinkPad T500", HDAPS_ORIENT_INVERT_XY),
 	HDAPS_DMI_MATCH_INVERT("LENOVO", "ThinkPad T510", HDAPS_ORIENT_SWAP | HDAPS_ORIENT_INVERT_X | HDAPS_ORIENT_INVERT_Y),
-	HDAPS_DMI_MATCH_INVERT("LENOVO", "ThinkPad W51O", HDAPS_ORIENT_MAX),
+	HDAPS_DMI_MATCH_INVERT("LENOVO", "ThinkPad W510", HDAPS_ORIENT_MAX),
+	HDAPS_DMI_MATCH_INVERT("LENOVO", "ThinkPad W520", HDAPS_ORIENT_MAX),
 	HDAPS_DMI_MATCH_INVERT("LENOVO", "ThinkPad X200s", HDAPS_ORIENT_SWAP | HDAPS_ORIENT_INVERT_XY),
 	HDAPS_DMI_MATCH_INVERT("LENOVO", "ThinkPad X200", HDAPS_ORIENT_SWAP | HDAPS_ORIENT_INVERT_X | HDAPS_ORIENT_INVERT_Y),
 	HDAPS_DMI_MATCH_INVERT("LENOVO", "ThinkPad X201 Tablet", HDAPS_ORIENT_SWAP | HDAPS_ORIENT_INVERT_XY),
